@@ -15,12 +15,12 @@ void load_stbibuf(stbibuf& output,
                   int& width,
                   int& height,
                   int& channels) {
-    output = stbibuf(stbi_load(filename, &width, &height, &channels, 3),
+    output = stbibuf(stbi_load(filename, &width, &height, &channels, 1),
                    [](uint8_t* buf) {
         stbi_image_free(buf);
     });
 
-    //channels = 1;
+    channels = 1;
 }
 
 int main(int argc,
@@ -30,12 +30,12 @@ int main(int argc,
     int channels;
 
     stbibuf stb_source;
-    load_stbibuf(stb_source, "source.png",
+    load_stbibuf(stb_source, "../images/house.jpg",
                  width, height, channels);
 
     stbibuf stb_destination;
     load_stbibuf(stb_destination,
-                 "destination.png",
+                 "../images/house.jpg",
                  width, height, channels);
 
     Mat source;

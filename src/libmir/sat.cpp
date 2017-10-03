@@ -10,6 +10,7 @@ void generate_sat(const Mat& image,
                   Mat& sat)
 {
     assert(image.type() == Mat::Type::UINT8);
+    assert(channels == image.step.buf[1]);
 
     sat.create<SatType>(image.cols + 1,
                         image.rows + 1,
@@ -71,6 +72,7 @@ void scale_from_sat(const Mat& source,
                     Mat& destination)
 {
     assert(scale < 1.0f);
+    assert(channels == source.step.buf[1]);
     assert(source.type() == SatTypeEnum);
 
     int dstCols = static_cast<int>(
