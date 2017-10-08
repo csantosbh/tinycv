@@ -9,6 +9,8 @@
 // TODO move to some proper place
 static const int NUM_HISTOGRAM_CENTRAL_BINS = 8;
 
+using Matrix3fRowMajor = Eigen::Matrix<float, 3, 3, Eigen::RowMajor>;
+
 /**
  * Kronecker's binary function
  */
@@ -82,7 +84,7 @@ template <typename PixelType, typename BinningMethod>
 void image_histogram(const Mat& image, std::vector<float>& histogram)
 {
     // This function works for single channel images only
-    assert(image.step.buf[1] == 1);
+    assert(image.channels() == 1);
 
     Mat::ConstIterator<PixelType> it_img(image);
 
@@ -153,8 +155,8 @@ void joint_image_histogram(const Mat& image_a,
                            std::vector<float>& histogram)
 {
     // This function works for single channel images only
-    assert(image_a.step.buf[1] == 1);
-    assert(image_b.step.buf[1] == 1);
+    assert(image_a.channels() == 1);
+    assert(image_b.channels() == 1);
     // The input images must have the same dimensions
     assert(image_a.rows == image_b.rows);
     assert(image_a.cols == image_b.cols);
@@ -250,6 +252,276 @@ void joint_image_histogram(const Mat& image_a,
     return;
 }
 
+double mutual_information(const Mat& image_a, const Mat& image_b)
+{
+    using std::vector;
+
+    vector<float> histogram_a;
+    image_histogram<uint8_t, BSpline4>(image_a, histogram_a);
+
+    vector<float> histogram_b;
+    image_histogram<uint8_t, BSpline4>(image_b, histogram_b);
+
+    vector<float> histogram_ab;
+    joint_image_histogram<uint8_t, BSpline4>(image_a, image_b, histogram_ab);
+
+    const int number_practical_bins = static_cast<int>(histogram_a.size());
+
+    const auto joint_hist_pos = [number_practical_bins](int x, int y) {
+        return y * number_practical_bins + x;
+    };
+
+    double mi_summation = 0.0;
+    for (int j = 0; j < number_practical_bins; ++j) {
+        for (int i = 0; i < number_practical_bins; ++i) {
+            double prob_ij = histogram_ab[joint_hist_pos(i, j)];
+
+            double prob_ai = histogram_a[i];
+            double prob_bj = histogram_b[j];
+
+            mi_summation += prob_ij * std::log(prob_ij / (prob_ai * prob_bj));
+        }
+    }
+
+    return mi_summation;
+}
+
+template <typename PixelType>
+PixelType bilinear_sample(const Mat::ConstIterator<PixelType>& it_img,
+                          float* coordinates,
+                          int channel)
+{
+    float horiz_alpha      = coordinates[0] - std::floor(coordinates[0]);
+    float vert_alpha       = coordinates[1] - std::floor(coordinates[1]);
+    float horiz_alpha_comp = 1.f - horiz_alpha;
+    float vert_alpha_comp  = 1.f - vert_alpha;
+
+    int coordinates_i[] = {static_cast<int>(coordinates[0]),
+                           static_cast<int>(coordinates[1])};
+
+    int left   = std::max(0, coordinates_i[0]);
+    int right  = std::min(coordinates_i[0] + 1, it_img.m.cols - 1);
+    int top    = std::max(0, coordinates_i[1]);
+    int bottom = std::min(coordinates_i[1], it_img.m.rows - 1);
+
+    assert(0 <= left);
+    assert(left <= right);
+    assert(right < it_img.m.cols);
+
+    assert(0 <= top);
+    assert(top <= bottom);
+    assert(bottom < it_img.m.rows);
+
+    PixelType tl = it_img(top, left, channel);
+    PixelType tr = it_img(top, right, channel);
+    PixelType bl = it_img(bottom, left, channel);
+    PixelType br = it_img(bottom, right, channel);
+
+    return static_cast<PixelType>(
+        vert_alpha_comp * (horiz_alpha * tr + horiz_alpha_comp * tl) +
+        vert_alpha * (horiz_alpha * br + horiz_alpha_comp * bl));
+}
+
+struct BoundingBox
+{
+    BoundingBox()
+    {
+    }
+
+    BoundingBox(const BoundingBox& other)
+        : left_top(other.left_top)
+        , right_bottom(other.right_bottom)
+    {
+    }
+
+    BoundingBox(BoundingBox&& other)
+        : left_top(other.left_top)
+        , right_bottom(other.right_bottom)
+    {
+    }
+
+    BoundingBox(const std::initializer_list<std::array<float, 2>>& corners)
+        : left_top(*corners.begin())
+        , right_bottom(*(corners.end() - 1))
+    {
+    }
+
+    BoundingBox(const Mat& image)
+        : left_top({0, 0})
+        , right_bottom({static_cast<float>(image.cols - 1),
+                        static_cast<float>(image.rows - 1)})
+    {
+    }
+
+    BoundingBox& operator=(const BoundingBox& other)
+    {
+        left_top     = other.left_top;
+        right_bottom = other.right_bottom;
+
+        return *this;
+    }
+
+    BoundingBox& operator=(BoundingBox&& other)
+    {
+        left_top     = other.left_top;
+        right_bottom = other.right_bottom;
+
+        return *this;
+    }
+
+    float width() const
+    {
+        return right_bottom[0] - left_top[0];
+    }
+
+    float height() const
+    {
+        return right_bottom[1] - left_top[1];
+    }
+
+    std::array<float, 2> left_top;
+    std::array<float, 2> right_bottom;
+};
+
+void bounding_box_transform(const float* homography_ptr, BoundingBox& bb)
+{
+    using Eigen::Vector3f;
+    using std::vector;
+
+    Eigen::Map<const Matrix3fRowMajor> homography(homography_ptr);
+
+    // clang-format off
+    const vector<Vector3f> image_corner{
+        {bb.left_top[0],     bb.left_top[1],     1.f},
+        {bb.right_bottom[0], bb.left_top[1],     1.f},
+        {bb.right_bottom[0], bb.right_bottom[1], 1.f},
+        {bb.left_top[0],     bb.right_bottom[1], 1.f}
+    };
+
+    bb.left_top     = {std::numeric_limits<float>::max(),
+                       std::numeric_limits<float>::max()};
+    bb.right_bottom = {std::numeric_limits<float>::lowest(),
+                       std::numeric_limits<float>::lowest()};
+    // clang-format on
+
+    vector<Vector3f> transformed_corners(4);
+    for (size_t i = 0; i < image_corner.size(); ++i) {
+        transformed_corners[i] = homography * image_corner[i];
+        transformed_corners[i] /= transformed_corners[i][2];
+
+        // Update bounding box
+        for (int c = 0; c < 2; ++c) {
+            bb.left_top[c] =
+                std::min(bb.left_top[c], transformed_corners[i][c]);
+            bb.right_bottom[c] =
+                std::max(bb.right_bottom[c], transformed_corners[i][c]);
+        }
+    }
+}
+
+BoundingBox bounding_box_intersect(const BoundingBox& bb_a,
+                                   const BoundingBox& bb_b)
+{
+    using std::max;
+    using std::min;
+
+    return BoundingBox({{max(bb_a.left_top[0], bb_b.left_top[0]),
+                         max(bb_a.left_top[1], bb_b.left_top[1])},
+                        {min(bb_a.right_bottom[0], bb_b.right_bottom[0]),
+                         min(bb_a.right_bottom[1], bb_b.right_bottom[1])}});
+}
+
+template <typename T>
+Mat image_crop(const Mat& image, const BoundingBox& crop_bb)
+{
+    Mat output;
+
+    assert(crop_bb.left_top[0] >= 0.f);
+    assert(crop_bb.left_top[1] >= 0.f);
+
+    assert(crop_bb.left_top[0] <= crop_bb.right_bottom[0]);
+    assert(crop_bb.left_top[1] <= crop_bb.right_bottom[1]);
+
+    assert(crop_bb.left_top[0] <= crop_bb.right_bottom[0]);
+    assert(crop_bb.left_top[1] <= crop_bb.right_bottom[1]);
+
+    output.create_from_buffer<T>(static_cast<T*>(image.data) +
+                                     static_cast<int>(crop_bb.left_top[0]) *
+                                         image.channels(),
+                                 static_cast<int>(crop_bb.height()),
+                                 static_cast<int>(crop_bb.width()),
+                                 image.channels(),
+                                 image.row_stride());
+
+    return output;
+}
+
+void image_transform(const Mat& image,
+                     const float* homography_ptr,
+                     const BoundingBox& output_bb,
+                     Mat& output_image)
+{
+    using Eigen::Vector2f;
+    using Eigen::Vector3f;
+    using std::vector;
+    using PixelType = uint8_t;
+
+    assert(image.type() == Mat::Type::UINT8);
+
+    // Compute bounding box of the transformed image by transforming its corners
+    Eigen::Map<const Matrix3fRowMajor> homography(homography_ptr);
+
+    int output_width = static_cast<int>(
+        std::floor(output_bb.right_bottom[0] - output_bb.left_top[0]));
+    int output_height = static_cast<int>(
+        std::floor(output_bb.right_bottom[1] - output_bb.left_top[1]));
+
+    output_image.create<PixelType>(output_width, output_height, 1);
+    // TODO: output_image.fill(0);
+    memset(output_image.data, 0, output_width * output_height);
+
+    Matrix3fRowMajor homography_inv = homography.inverse();
+    // Converts from output space to transformed bounding box space
+    Matrix3fRowMajor transf_bb_pivot;
+    // clang-format off
+    transf_bb_pivot << 1.f, 0.f, output_bb.left_top[0],
+                       0.f, 1.f, output_bb.left_top[1],
+                       0.f, 0.f, 1.f;
+    // clang-format on
+    homography_inv = homography_inv * transf_bb_pivot;
+
+    Mat::ConstIterator<PixelType> it_img(image);
+    Mat::Iterator<PixelType> it_transf_img(output_image);
+
+    float last_input_col = static_cast<float>(image.cols) - 1.f;
+    float last_input_row = static_cast<float>(image.rows) - 1.f;
+
+    for (int y_buff = 0; y_buff < output_image.rows; ++y_buff) {
+        for (int x_buff = 0; x_buff < output_image.cols; ++x_buff) {
+            for (int c = 0; c < static_cast<int>(output_image.channels());
+                 ++c) {
+                Vector3f transformed_coord =
+                    homography_inv * Vector3f(static_cast<float>(x_buff),
+                                              static_cast<float>(y_buff),
+                                              1.f);
+                // Normalize homogeneous coordinates
+                transformed_coord /= transformed_coord[2];
+
+                if (transformed_coord[0] >= 0.f &&
+                    transformed_coord[0] <= last_input_col &&
+                    transformed_coord[1] >= 0.f &&
+                    transformed_coord[1] <= last_input_row) {
+                    it_transf_img(y_buff, x_buff, c) =
+                        bilinear_sample(it_img, transformed_coord.data(), c);
+                    // TODO set mask to ~0
+                }
+            }
+        }
+    }
+
+    return;
+}
+
 bool register_translation(const Mat& source,
                           const Mat& destination,
                           Eigen::Vector2f& registration)
@@ -279,6 +551,7 @@ bool register_translation(const Mat& source,
     scale_from_sat<uint8_t, 1>(src_sat, 0.1f, small);
     */
 
+    /*
     using ProbClass = BSpline4;
     {
         std::vector<float> histogram;
@@ -301,6 +574,21 @@ bool register_translation(const Mat& source,
         }
         std::cout << std::endl;
     }
+    */
+
+    // clang-format off
+    std::vector<float> homography {
+        1.f, 0.f, 10.f,
+        0.f, 1.f, -10.f,
+        -0.0001f, 0.0001f, 1.f
+    };
+    // clang-format on
+    Mat transformed_source;
+    BoundingBox interest_bb(source);
+    bounding_box_transform(homography.data(), interest_bb);
+    interest_bb = bounding_box_intersect(interest_bb, BoundingBox(source));
+    Mat cropped_source = image_crop<uint8_t>(source, interest_bb);
+    image_transform(source, homography.data(), interest_bb, transformed_source);
 
     return true;
 }
