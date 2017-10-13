@@ -3,6 +3,8 @@
 
 #include <memory>
 
+struct BoundingBox;
+
 class Mat
 {
   public:
@@ -19,11 +21,6 @@ class Mat
     void* data;
     int cols; // Width
     int rows; // Height
-    struct
-    {
-        size_t buf[2]; // buf[0] = width of the containing buffer*channels;
-                       // buf[1] = channels
-    } step;
 
     Mat();
 
@@ -76,7 +73,7 @@ class Mat
         {
         }
         ConstIterator(const ConstIterator& cvIt)
-            : m(cvIt.m_)
+            : m(cvIt.m)
         {
         }
 
@@ -87,7 +84,17 @@ class Mat
         const Mat& m;
     };
 
+    /// Friends
+    template<typename T>
+    friend Mat image_crop(const Mat& image, const BoundingBox& crop_bb);
+
   private:
+    struct
+    {
+        size_t buf[2]; // buf[0] = width of the containing buffer*channels;
+                       // buf[1] = channels
+    } step;
+
     std::shared_ptr<void> data_mgr_;
 
     int flags_; // OpenCV-compatible flags
