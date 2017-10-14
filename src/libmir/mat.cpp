@@ -100,8 +100,8 @@ Mat::Type Mat::type() const
 template <typename T>
 Mat& Mat::create(int height, int width, int channels)
 {
-    cols = height;
-    rows = width;
+    rows = height;
+    cols = width;
     step = {static_cast<size_t>(cols * channels),
             static_cast<size_t>(channels)};
 

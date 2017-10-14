@@ -206,8 +206,51 @@ void joint_image_histogram(const Mat& image_a,
 
     // Store how much each pixel contribute to all histogram bins that are
     // influenced by its value
-    std::array<float, 2 * BinningMethod::INFLUENCE_MARGIN + 1> bin_weights_a{};
-    std::array<float, 2 * BinningMethod::INFLUENCE_MARGIN + 1> bin_weights_b{};
+    using WeightArray =
+        std::array<float, 2 * BinningMethod::INFLUENCE_MARGIN + 1>;
+    WeightArray bin_weights_a{};
+    WeightArray bin_weights_b{};
+
+    const auto updateImageHistogram =
+        [a_bin_map, b_bin_map](int y,
+                               int x,
+                               bool pixel_mask,
+                               const Mat::ConstIterator<PixelType>& it_img,
+                               float& pixel_bin,
+                               int& lower_bin,
+                               int& upper_bin,
+                               WeightArray& bin_weights,
+                               std::vector<float>& histogram) {
+            if (pixel_mask) {
+                const PixelType& pixel_val = it_img(y, x, 0);
+
+                int pixel_bin_rounded = static_cast<int>(pixel_val) / bin_width;
+                pixel_bin             = a_bin_map * pixel_val + b_bin_map;
+
+                lower_bin = std::max(-BinningMethod::INFLUENCE_MARGIN,
+                                     pixel_bin_rounded -
+                                         BinningMethod::INFLUENCE_MARGIN);
+
+                upper_bin = std::min(pixel_bin_rounded +
+                                         BinningMethod::INFLUENCE_MARGIN,
+                                     NUM_HISTOGRAM_CENTRAL_BINS - 1 +
+                                         BinningMethod::INFLUENCE_MARGIN);
+
+                int bin_weights_idx = 0;
+                for (int neighbor = lower_bin; neighbor <= upper_bin;
+                     ++neighbor) {
+                    const float distance_to_neighbor =
+                        pixel_bin - static_cast<float>(neighbor);
+
+                    bin_weights[bin_weights_idx] =
+                        BinningMethod::histogram_bin_function(
+                            distance_to_neighbor);
+                    histogram[neighbor + BinningMethod::INFLUENCE_MARGIN] +=
+                        bin_weights[bin_weights_idx];
+                    bin_weights_idx++;
+                }
+            }
+        };
 
     for (int y = 0; y < image_a.rows; ++y) {
         for (int x = 0; x < image_a.cols; ++x) {
@@ -222,47 +265,25 @@ void joint_image_histogram(const Mat& image_a,
             const bool pixel_mask =
                 (it_mask_a(y, x, 0) != 0) && (it_mask_b(y, x, 0) != 0);
 
-#define UPDATE_IMAGE_HISTOGRAM(                                                \
-    it_img, pixel_bin, lower_bin, upper_bin, bin_weights, histogram)           \
-    if (pixel_mask) {                                                          \
-        const PixelType& pixel_val = it_img(y, x, 0);                          \
-                                                                               \
-        int pixel_bin_rounded = static_cast<int>(pixel_val) / bin_width;       \
-        pixel_bin             = a_bin_map * pixel_val + b_bin_map;             \
-                                                                               \
-        lower_bin =                                                            \
-            std::max(-BinningMethod::INFLUENCE_MARGIN,                         \
-                     pixel_bin_rounded - BinningMethod::INFLUENCE_MARGIN);     \
-                                                                               \
-        upper_bin = std::min(                                                  \
-            pixel_bin_rounded + BinningMethod::INFLUENCE_MARGIN,               \
-            NUM_HISTOGRAM_CENTRAL_BINS - 1 + BinningMethod::INFLUENCE_MARGIN); \
-                                                                               \
-        int bin_weights_idx = 0;                                               \
-        for (int neighbor = lower_bin; neighbor <= upper_bin; ++neighbor) {    \
-            const float distance_to_neighbor =                                 \
-                pixel_bin - static_cast<float>(neighbor);                      \
-                                                                               \
-            bin_weights[bin_weights_idx] =                                     \
-                BinningMethod::histogram_bin_function(distance_to_neighbor);   \
-            histogram[neighbor + BinningMethod::INFLUENCE_MARGIN] +=           \
-                bin_weights[bin_weights_idx];                                  \
-            bin_weights_idx++;                                                 \
-        }                                                                      \
-    }
-            UPDATE_IMAGE_HISTOGRAM(it_img_a,
-                                   pixel_bin_a,
-                                   lower_bin_a,
-                                   upper_bin_a,
-                                   bin_weights_a,
-                                   histogram_a);
+            updateImageHistogram(y,
+                                 x,
+                                 pixel_mask,
+                                 it_img_a,
+                                 pixel_bin_a,
+                                 lower_bin_a,
+                                 upper_bin_a,
+                                 bin_weights_a,
+                                 histogram_a);
 
-            UPDATE_IMAGE_HISTOGRAM(it_img_b,
-                                   pixel_bin_b,
-                                   lower_bin_b,
-                                   upper_bin_b,
-                                   bin_weights_b,
-                                   histogram_b);
+            updateImageHistogram(y,
+                                 x,
+                                 pixel_mask,
+                                 it_img_b,
+                                 pixel_bin_b,
+                                 lower_bin_b,
+                                 upper_bin_b,
+                                 bin_weights_b,
+                                 histogram_b);
 
             if (pixel_mask) {
                 // Update histogram_ab
@@ -292,27 +313,40 @@ void joint_image_histogram(const Mat& image_a,
         }
     }
 
-#define NORMALIZE_HISTOGRAM(histogram)                     \
-    {                                                      \
-        double histogram_summation = 0.0;                  \
-        for (const auto& h_value : histogram) {            \
-            histogram_summation += h_value;                \
-        }                                                  \
-                                                           \
-        float histogram_normalization =                    \
-            static_cast<float>(1.0 / histogram_summation); \
-        for (auto& h_value : histogram) {                  \
-            h_value *= histogram_normalization;            \
-        }                                                  \
-    }
+    const auto normalizeHistogram = [](std::vector<float>& histogram) {
+        double histogram_summation = 0.0;
+        for (const auto& h_value : histogram) {
+            histogram_summation += h_value;
+        }
+
+        float histogram_normalization =
+            static_cast<float>(1.0 / histogram_summation);
+        for (auto& h_value : histogram) {
+            h_value *= histogram_normalization;
+        }
+    };
 
     // Normalize histograms
-    NORMALIZE_HISTOGRAM(histogram_a);
-    NORMALIZE_HISTOGRAM(histogram_b);
-    NORMALIZE_HISTOGRAM(histogram_ab);
+    normalizeHistogram(histogram_a);
+    normalizeHistogram(histogram_b);
+    normalizeHistogram(histogram_ab);
 
     return;
 }
+
+/**
+ * Mask iterator for the case where we know that all pixels are valid
+ *
+ * Designed for use with templated parameters, so the compiler can optimize away
+ * conditional branches.
+ */
+struct PositiveMaskIterator
+{
+    uint8_t operator()(int, int, int) const
+    {
+        return 255;
+    }
+};
 
 template <typename MaskIteratorA, typename MaskIteratorB>
 double mutual_information_impl(const Mat& image_a,
@@ -349,6 +383,34 @@ double mutual_information_impl(const Mat& image_a,
         for (int i = 0; i < number_practical_bins; ++i) {
             double prob_ij = histogram_ab[joint_hist_pos(i, j)];
 
+            /*
+             * We know that P(a=i,b=j) < P(a=i) and P(a=i,b=j) < P(b=j), since
+             * (a=i,b=j) is a subset of both (a=i) and (b=j) events.
+             *
+             * Therefore, if P(a=i)=0 or P(b=j)=0, then P(a=i,b=j)=0.
+             *
+             * Now consider P(a=i,b=j)=0. Then, the MI term
+             *
+             *  MI(i,j) = P(a=i,b=j) * log(P(a=i,b=j) / (P(a=i) * P(b=j)))
+             *
+             * must evaluate to 0.
+             *
+             * Proof:
+             * Let k = P(a=i,b=j), l=P(a=i) and m=P(b=j), for the sake of
+             * simplicity. Then:
+             *
+             *  MI(i,j) = lim{k->0+} k * log(k/(l * m)).
+             *
+             * If l > 0 and m > 0, then it is trivial to see that MI(i,j) = 0.
+             * If, however, both l and m are zero, we have
+             *
+             *  MI(i,j) = lim{k->0+} k * log(k/(k * k))
+             *          = lim{k->0+} k * log(k) - k * log(k) - k * log(k)
+             *
+             * Each term k * log(k) can be written as log(k) / (1/k), so one can
+             * use L'hopital rule to find out that each term of the sum
+             * converges to 0.
+             */
             if (prob_ij > 0.0) {
                 double prob_ai = histogram_a[i];
                 double prob_bj = histogram_b[j];
@@ -363,20 +425,6 @@ double mutual_information_impl(const Mat& image_a,
 
     return mi_summation;
 }
-
-/**
- * Mask iterator for the case where we know that all pixels are valid
- *
- * Designed for use with templated parameters, so the compiler can optimize away
- * conditional branches.
- */
-struct PositiveMaskIterator
-{
-    uint8_t operator()(int, int, int) const
-    {
-        return 255;
-    }
-};
 
 /**
  * Compute the mutual information between image_a and image_b
@@ -515,12 +563,12 @@ struct BoundingBox
         return *this;
     }
 
-    int rounded_width() const
+    int flooring_width() const
     {
         return static_cast<int>(right_bottom[0] - left_top[0]) + 1;
     }
 
-    int rounded_height() const
+    int flooring_height() const
     {
         return static_cast<int>(right_bottom[1] - left_top[1]) + 1;
     }
@@ -600,8 +648,8 @@ Mat image_crop(const Mat& image, const BoundingBox& crop_bb)
         static_cast<T*>(image.data) +
             static_cast<int>(crop_bb.left_top[1]) * image.row_stride() +
             static_cast<int>(crop_bb.left_top[0]) * image.channels(),
-        crop_bb.rounded_height(),
-        crop_bb.rounded_width(),
+        crop_bb.flooring_height(),
+        crop_bb.flooring_width(),
         image.channels(),
         image.row_stride());
     output.data_mgr_ = image.data_mgr_;
@@ -609,7 +657,11 @@ Mat image_crop(const Mat& image, const BoundingBox& crop_bb)
     return output;
 }
 
-template <typename PixelType, int channels>
+enum class InterpolationMode { Bilinear, NearestNeighbor };
+
+template <typename PixelType,
+          int channels,
+          InterpolationMode interpolation_mode>
 void image_transform(const Mat& image,
                      const float* homography_ptr,
                      const BoundingBox& output_bb,
@@ -626,11 +678,11 @@ void image_transform(const Mat& image,
     // Compute bounding box of the transformed image by transforming its corners
     Eigen::Map<const Matrix3fRowMajor> homography(homography_ptr);
 
-    int output_width  = output_bb.rounded_width();
-    int output_height = output_bb.rounded_height();
+    int output_width  = output_bb.flooring_width();
+    int output_height = output_bb.flooring_height();
 
-    output_image.create<PixelType>(output_width, output_height, channels);
-    output_mask.create<uint8_t>(output_width, output_height, 1);
+    output_image.create<PixelType>(output_height, output_width, channels);
+    output_mask.create<uint8_t>(output_height, output_width, 1);
     memset(output_image.data, 0, output_width * output_height * channels);
 
     Matrix3fRowMajor homography_inv = homography.inverse();
@@ -638,8 +690,8 @@ void image_transform(const Mat& image,
     // Converts from output space to transformed bounding box space
     Matrix3fRowMajor transf_bb_pivot;
     // clang-format off
-    transf_bb_pivot << 1.f, 0.f, output_bb.left_top[0],
-                       0.f, 1.f, output_bb.left_top[1],
+    transf_bb_pivot << 1.f, 0.f, std::floor(output_bb.left_top[0]),
+                       0.f, 1.f, std::floor(output_bb.left_top[1]),
                        0.f, 0.f, 1.f;
     // clang-format on
     homography_inv = homography_inv * transf_bb_pivot;
@@ -665,10 +717,21 @@ void image_transform(const Mat& image,
                 transformed_coord[1] >= 0.f &&
                 transformed_coord[1] <= last_input_row) {
 
-                bilinear_sample<PixelType, channels>(
-                    it_img,
-                    transformed_coord.data(),
-                    &it_transf_img(y_buff, x_buff, 0));
+                if (interpolation_mode == InterpolationMode::Bilinear) {
+                    bilinear_sample<PixelType, channels>(
+                        it_img,
+                        transformed_coord.data(),
+                        &it_transf_img(y_buff, x_buff, 0));
+                } else {
+                    assert(interpolation_mode ==
+                           InterpolationMode::NearestNeighbor);
+                    for (int c = 0; c < channels; ++c) {
+                        it_transf_img(y_buff, x_buff, c) =
+                            it_img(static_cast<int>(transformed_coord[1]),
+                                   static_cast<int>(transformed_coord[0]),
+                                   c);
+                    }
+                }
 
                 it_mask(y_buff, x_buff, 0) = 255;
             } else {
@@ -687,9 +750,9 @@ void generate_mi_space(const Mat& source)
     Mat small;
     scale_from_sat<uint8_t, 1>(src_sat, 0.3f, small);
 
-    const float dt = 20.f;
-    for (float y = -dt; y <= dt; ++y) {
-        for (float x = -dt; x <= dt; ++x) {
+    const float dt = 10.0f;
+    for (float y = -dt; y <= dt; y += 0.1f) {
+        for (float x = -dt; x <= dt; x += 0.1f) {
 
             // clang-format off
             std::vector<float> homography {
@@ -699,33 +762,29 @@ void generate_mi_space(const Mat& source)
             };
             // clang-format on
 
-            BoundingBox input_bb  = BoundingBox(small);
+            Mat transformed_mask;
+            Mat transformed_img;
+
+            BoundingBox input_bb = BoundingBox(small);
+
             BoundingBox output_bb = bounding_box_intersect(
                 bounding_box_transform(input_bb, homography.data()), input_bb);
             Mat cropped_img = image_crop<uint8_t>(small, output_bb);
-
-            Mat transformed_mask;
-            Mat transformed_img;
-            /*
-            image_transform<uint8_t, 1>(small,
-                                        homography.data(),
-                                        output_bb,
-                                        transformed_img,
-                                        transformed_mask);
-            */
-            image_transform<uint8_t, 1>(small,
-                                        homography.data(),
-                                        input_bb,
-                                        transformed_img,
-                                        transformed_mask);
-            cropped_img = image_crop<uint8_t>(small, input_bb);
-
+            image_transform<uint8_t, 1, InterpolationMode::Bilinear>(
+                small,
+                homography.data(),
+                output_bb,
+                transformed_img,
+                transformed_mask);
             double mi = mutual_information(
                 cropped_img, transformed_img, transformed_mask);
+
             std::cout << mi << " ";
         }
         std::cout << std::endl;
     }
+
+    return;
 }
 
 bool register_translation(const Mat& source,

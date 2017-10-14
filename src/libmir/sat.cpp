@@ -25,7 +25,7 @@ void generate_sat(const Mat& image, Mat& sat)
     assert(image.type() == Mat::Type::UINT8);
     assert(channels == image.channels());
 
-    sat.create<SatType>(image.cols + 1, image.rows + 1, channels);
+    sat.create<SatType>(image.rows + 1, image.cols + 1, channels);
 
     // Horizontal step
     uint8_t* imagePtr = static_cast<uint8_t*>(image.data);
@@ -87,7 +87,7 @@ void scale_from_sat(const Mat& source, float scale, Mat& destination)
     int dstRows =
         static_cast<int>(round(scale * static_cast<float>(source.rows)));
 
-    destination.create<T>(dstCols, dstRows, channels);
+    destination.create<T>(dstRows, dstCols, channels);
 
     /*
      *
