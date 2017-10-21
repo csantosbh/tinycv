@@ -8,7 +8,7 @@ set(CCX g++)
 
 # C++ compiler options
 set(MIR_CXX_Options
-    -std=c++11
+    -std=c++14
     -Wconversion
     -Wall
     -Werror

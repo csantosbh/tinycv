@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "mat.h"
+#include "math.h"
 #include "registration.h"
 #include "sat.h"
 
@@ -190,13 +191,13 @@ void joint_image_histogram(const Mat& image_a,
     histogram_ab.resize(hist_ab_size);
     std::fill(histogram_ab.begin(), histogram_ab.end(), 0.f);
 
-    const PixelType color_max = std::numeric_limits<PixelType>::max();
+    const PixelType color_max = static_cast<PixelType>(255);
 
     const int bin_width =
         (static_cast<int>(color_max) + 1) / NUM_HISTOGRAM_CENTRAL_BINS;
 
-    const float a_bin_map =
-        NUM_HISTOGRAM_CENTRAL_BINS / static_cast<float>(color_max);
+    const float a_bin_map = static_cast<float>(NUM_HISTOGRAM_CENTRAL_BINS) /
+                            static_cast<float>(color_max);
     const float b_bin_map = -0.5;
 
     // Helper function for accessing arbitrary 2d positions in histogram ab
@@ -211,46 +212,45 @@ void joint_image_histogram(const Mat& image_a,
     WeightArray bin_weights_a{};
     WeightArray bin_weights_b{};
 
-    const auto updateImageHistogram =
-        [a_bin_map, b_bin_map](int y,
-                               int x,
-                               bool pixel_mask,
-                               const Mat::ConstIterator<PixelType>& it_img,
-                               float& pixel_bin,
-                               int& lower_bin,
-                               int& upper_bin,
-                               WeightArray& bin_weights,
-                               std::vector<float>& histogram) {
-            if (pixel_mask) {
-                const PixelType& pixel_val = it_img(y, x, 0);
+    const auto updateImageHistogram = [a_bin_map, b_bin_map, bin_width](
+                                          int y,
+                                          int x,
+                                          bool pixel_mask,
+                                          const Mat::ConstIterator<PixelType>&
+                                              it_img,
+                                          float& pixel_bin,
+                                          int& lower_bin,
+                                          int& upper_bin,
+                                          WeightArray& bin_weights,
+                                          std::vector<float>& histogram) {
+        if (pixel_mask) {
+            const PixelType& pixel_val = it_img(y, x, 0);
 
-                int pixel_bin_rounded = static_cast<int>(pixel_val) / bin_width;
-                pixel_bin             = a_bin_map * pixel_val + b_bin_map;
+            int pixel_bin_rounded = static_cast<int>(pixel_val) / bin_width;
+            pixel_bin             = a_bin_map * pixel_val + b_bin_map;
 
-                lower_bin = std::max(-BinningMethod::INFLUENCE_MARGIN,
-                                     pixel_bin_rounded -
-                                         BinningMethod::INFLUENCE_MARGIN);
+            lower_bin =
+                std::max(-BinningMethod::INFLUENCE_MARGIN,
+                         pixel_bin_rounded - BinningMethod::INFLUENCE_MARGIN);
 
-                upper_bin = std::min(pixel_bin_rounded +
-                                         BinningMethod::INFLUENCE_MARGIN,
-                                     NUM_HISTOGRAM_CENTRAL_BINS - 1 +
-                                         BinningMethod::INFLUENCE_MARGIN);
+            upper_bin =
+                std::min(pixel_bin_rounded + BinningMethod::INFLUENCE_MARGIN,
+                         NUM_HISTOGRAM_CENTRAL_BINS - 1 +
+                             BinningMethod::INFLUENCE_MARGIN);
 
-                int bin_weights_idx = 0;
-                for (int neighbor = lower_bin; neighbor <= upper_bin;
-                     ++neighbor) {
-                    const float distance_to_neighbor =
-                        pixel_bin - static_cast<float>(neighbor);
+            int bin_weights_idx = 0;
+            for (int neighbor = lower_bin; neighbor <= upper_bin; ++neighbor) {
+                const float distance_to_neighbor =
+                    pixel_bin - static_cast<float>(neighbor);
 
-                    bin_weights[bin_weights_idx] =
-                        BinningMethod::histogram_bin_function(
-                            distance_to_neighbor);
-                    histogram[neighbor + BinningMethod::INFLUENCE_MARGIN] +=
-                        bin_weights[bin_weights_idx];
-                    bin_weights_idx++;
-                }
+                bin_weights[bin_weights_idx] =
+                    BinningMethod::histogram_bin_function(distance_to_neighbor);
+                histogram[neighbor + BinningMethod::INFLUENCE_MARGIN] +=
+                    bin_weights[bin_weights_idx];
+                bin_weights_idx++;
             }
-        };
+        }
+    };
 
     for (int y = 0; y < image_a.rows; ++y) {
         for (int x = 0; x < image_a.cols; ++x) {
@@ -348,7 +348,7 @@ struct PositiveMaskIterator
     }
 };
 
-template <typename MaskIteratorA, typename MaskIteratorB>
+template <typename PixelType, typename MaskIteratorA, typename MaskIteratorB>
 double mutual_information_impl(const Mat& image_a,
                                const MaskIteratorA& it_mask_a,
                                const Mat& image_b,
@@ -356,7 +356,6 @@ double mutual_information_impl(const Mat& image_a,
 {
     using std::vector;
     using BinningMethod = BSpline4;
-    using PixelType     = uint8_t;
 
     vector<float> histogram_a;
     vector<float> histogram_b;
@@ -429,9 +428,12 @@ double mutual_information_impl(const Mat& image_a,
 /**
  * Compute the mutual information between image_a and image_b
  */
+template <typename PixelType>
 double mutual_information(const Mat& image_a, const Mat& image_b)
 {
-    return mutual_information_impl<PositiveMaskIterator, PositiveMaskIterator>(
+    return mutual_information_impl<PixelType,
+                                   PositiveMaskIterator,
+                                   PositiveMaskIterator>(
         image_a, {}, image_b, {});
 }
 
@@ -441,12 +443,14 @@ double mutual_information(const Mat& image_a, const Mat& image_b)
  * @param it_mask_b  Arbitrary mask for determining valid pixels of the image_b.
  *                   A pixel is valid iff its corresponding mask pixel is not 0.
  */
+template <typename PixelType>
 double mutual_information(const Mat& image_a,
                           const Mat& image_b,
-                          const Mat::ConstIterator<uint8_t>& it_mask_b)
+                          const Mat::ConstIterator<PixelType>& it_mask_b)
 {
-    return mutual_information_impl<PositiveMaskIterator,
-                                   Mat::ConstIterator<uint8_t>>(
+    return mutual_information_impl<PixelType,
+                                   PositiveMaskIterator,
+                                   Mat::ConstIterator<PixelType>>(
         image_a, {}, image_b, it_mask_b);
 }
 
@@ -458,13 +462,15 @@ double mutual_information(const Mat& image_a,
  * @param it_mask_b  Arbitrary mask for determining valid pixels of the image_b.
  *                   A pixel is valid iff its corresponding mask pixel is not 0.
  */
+template <typename PixelType>
 double mutual_information(const Mat& image_a,
-                          const Mat::ConstIterator<uint8_t>& it_mask_a,
+                          const Mat::ConstIterator<PixelType>& it_mask_a,
                           const Mat& image_b,
-                          const Mat::ConstIterator<uint8_t>& it_mask_b)
+                          const Mat::ConstIterator<PixelType>& it_mask_b)
 {
-    return mutual_information_impl<Mat::ConstIterator<uint8_t>,
-                                   Mat::ConstIterator<uint8_t>>(
+    return mutual_information_impl<PixelType,
+                                   Mat::ConstIterator<PixelType>,
+                                   Mat::ConstIterator<PixelType>>(
         image_a, it_mask_a, image_b, it_mask_b);
 }
 
@@ -513,6 +519,177 @@ void bilinear_sample(const Mat::ConstIterator<PixelType>& it_img,
                 (horiz_alpha * tr[channel] + horiz_alpha_comp * tl[channel]) +
             vert_alpha *
                 (horiz_alpha * br[channel] + horiz_alpha_comp * bl[channel]));
+    }
+}
+
+template <typename PixelType, int channels>
+void bilateral_sample(const Mat::ConstIterator<PixelType>& it_img,
+                      const float* coordinates,
+                      PixelType* output)
+{
+    assert(it_img.m.type() == Mat::get_type_enum<PixelType>());
+
+    float horiz_alpha      = coordinates[0] - std::floor(coordinates[0]);
+    float vert_alpha       = coordinates[1] - std::floor(coordinates[1]);
+    float horiz_alpha_comp = 1.f - horiz_alpha;
+    float vert_alpha_comp  = 1.f - vert_alpha;
+
+    // clang-format off
+    const std::array<std::array<float, 2>, 4> window_neighbor_coords {{
+        {-horiz_alpha, -vert_alpha},     {horiz_alpha_comp, -vert_alpha},
+        {-horiz_alpha, vert_alpha_comp}, {horiz_alpha_comp, vert_alpha_comp}
+    }};
+    // clang-format on
+
+    int coordinates_i[] = {static_cast<int>(coordinates[0]),
+                           static_cast<int>(coordinates[1])};
+
+    int left   = std::max(0, coordinates_i[0]);
+    int right  = std::min(coordinates_i[0] + 1, it_img.m.cols - 1);
+    int top    = std::max(0, coordinates_i[1]);
+    int bottom = std::min(coordinates_i[1] + 1, it_img.m.rows - 1);
+
+    assert(0 <= left);
+    assert(left <= right);
+    assert(right < it_img.m.cols);
+
+    assert(0 <= top);
+    assert(top <= bottom);
+    assert(bottom < it_img.m.rows);
+
+    const auto norm_l2_squared = [](int dimensions, const auto& coords) {
+        float result = 0.0;
+
+        for (int i = 0; i < dimensions; ++i) {
+            result += coords[i] * coords[i];
+        }
+
+        return result;
+    };
+
+    const auto norm_l1 = [](int dimensions, const auto& coords) {
+        float result = 0.0;
+
+        for (int i = 0; i < dimensions; ++i) {
+            result += std::abs(coords[i]);
+        }
+
+        return result;
+    };
+
+    // cpp-format off
+    const std::array<const PixelType*, 4> neighbors{
+        {&it_img(top, left, 0),
+         &it_img(top, right, 0),
+         &it_img(bottom, left, 0),
+         &it_img(bottom, right, 0)}};
+    // cpp-format on
+
+    const float sigma_d = 0.500f;
+    const float sigma_r = 8.0f;
+
+    const float sigma_d_squared = sigma_d * sigma_d;
+    const float sigma_r_squared = sigma_r * sigma_r;
+
+    std::array<float, 4> weights;
+    std::array<float, channels> median;
+
+    // Compute median pixel
+    for (int c = 0; c < channels; ++c) {
+        std::vector<size_t> neighbor_indices = {0, 1, 2, 3};
+
+        std::sort(neighbor_indices.begin(),
+                  neighbor_indices.end(),
+                  [&neighbors, c](size_t idx_a, size_t idx_b) {
+                      return neighbors[idx_a][c] < neighbors[idx_b][c];
+                  });
+
+        median[c] = neighbors[neighbor_indices[1]][c];
+    }
+
+    float weight_summation = 0.f;
+
+    // Compute intensity differences and bilateral weights
+    for (int i = 0; i < 4; ++i) {
+        std::array<float, channels> intensity_diffs;
+        for (int c = 0; c < channels; ++c) {
+            intensity_diffs[c] =
+                static_cast<float>(neighbors[i][c]) - median[c];
+        }
+
+        weights[i] = std::exp(-norm_l2_squared(2, window_neighbor_coords[i]) /
+                                  (2.0f * sigma_d_squared) -
+                              norm_l1(channels, intensity_diffs) /
+                                  (2.0f * sigma_r_squared));
+
+        weight_summation += weights[i];
+    }
+
+    const float weight_summation_comp = 1.f / weight_summation;
+
+    // Compute pixel value
+    for (int c = 0; c < channels; ++c) {
+        float pixel_value = 0.f;
+
+        for (int i = 0; i < 4; ++i) {
+            pixel_value += neighbors[i][c] * weights[i];
+        }
+
+        output[c] = static_cast<PixelType>(pixel_value * weight_summation_comp);
+    }
+}
+
+template <typename PixelType, int channels>
+void jitter_sample(const Mat::ConstIterator<PixelType>& it_img,
+                   const float* coordinates,
+                   PixelType* output)
+{
+    float horiz_alpha = coordinates[0] - std::floor(coordinates[0]);
+    float vert_alpha  = coordinates[1] - std::floor(coordinates[1]);
+
+    // TODO create own rand functions and distribution types
+    float rand_x =
+        static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX);
+    float rand_y =
+        static_cast<float>(std::rand()) / static_cast<float>(RAND_MAX);
+
+    int offset_x = rand_x < horiz_alpha ? 1 : 0;
+    int offset_y = rand_y < vert_alpha ? 1 : 0;
+
+    int x = clamp(
+        static_cast<int>(coordinates[0]) + offset_x, 0, it_img.m.cols - 1);
+    int y = clamp(
+        static_cast<int>(coordinates[1]) + offset_y, 0, it_img.m.rows - 1);
+
+    assert(0 <= x);
+    assert(x < it_img.m.cols);
+
+    assert(0 <= y);
+    assert(y < it_img.m.rows);
+
+    for (int channel = 0; channel < channels; ++channel) {
+        output[channel] = it_img(y, x, channel);
+    }
+}
+
+template <typename PixelType, int channels>
+void nearest_neighbor_sample(const Mat::ConstIterator<PixelType>& it_img,
+                             const float* coordinates,
+                             PixelType* output)
+{
+    int x = clamp(
+        static_cast<int>(std::round(coordinates[0])), 0, it_img.m.cols - 1);
+    int y = clamp(
+        static_cast<int>(std::round(coordinates[1])), 0, it_img.m.rows - 1);
+
+    assert(0 <= x);
+    assert(x < it_img.m.cols);
+
+    assert(0 <= y);
+    assert(y < it_img.m.rows);
+
+    for (int channel = 0; channel < channels; ++channel) {
+        output[channel] = it_img(y, x, channel);
     }
 }
 
@@ -630,9 +807,11 @@ BoundingBox bounding_box_intersect(const BoundingBox& bb_a,
                          min(bb_a.right_bottom[1], bb_b.right_bottom[1])}});
 }
 
-template <typename T>
+template <typename PixelType>
 Mat image_crop(const Mat& image, const BoundingBox& crop_bb)
 {
+    assert(image.type() == Mat::get_type_enum<PixelType>());
+
     Mat output;
 
     assert(crop_bb.left_top[0] >= 0.f);
@@ -644,8 +823,8 @@ Mat image_crop(const Mat& image, const BoundingBox& crop_bb)
     assert(crop_bb.left_top[0] <= crop_bb.right_bottom[0]);
     assert(crop_bb.left_top[1] <= crop_bb.right_bottom[1]);
 
-    output.create_from_buffer<T>(
-        static_cast<T*>(image.data) +
+    output.create_from_buffer<PixelType>(
+        static_cast<PixelType*>(image.data) +
             static_cast<int>(crop_bb.left_top[1]) * image.row_stride() +
             static_cast<int>(crop_bb.left_top[0]) * image.channels(),
         crop_bb.flooring_height(),
@@ -657,11 +836,15 @@ Mat image_crop(const Mat& image, const BoundingBox& crop_bb)
     return output;
 }
 
-enum class InterpolationMode { Bilinear, NearestNeighbor };
+template <typename PixelType>
+using InterpolationFunctor =
+    void (*)(const Mat::ConstIterator<PixelType>& it_img,
+             const float* coordinates,
+             PixelType* output);
 
 template <typename PixelType,
           int channels,
-          InterpolationMode interpolation_mode>
+          InterpolationFunctor<PixelType> interpolation_method>
 void image_transform(const Mat& image,
                      const float* homography_ptr,
                      const BoundingBox& output_bb,
@@ -672,7 +855,6 @@ void image_transform(const Mat& image,
     using Eigen::Vector3f;
     using std::vector;
 
-    assert(image.type() == Mat::Type::UINT8);
     assert(image.channels() == channels);
 
     // Compute bounding box of the transformed image by transforming its corners
@@ -717,21 +899,9 @@ void image_transform(const Mat& image,
                 transformed_coord[1] >= 0.f &&
                 transformed_coord[1] <= last_input_row) {
 
-                if (interpolation_mode == InterpolationMode::Bilinear) {
-                    bilinear_sample<PixelType, channels>(
-                        it_img,
-                        transformed_coord.data(),
-                        &it_transf_img(y_buff, x_buff, 0));
-                } else {
-                    assert(interpolation_mode ==
-                           InterpolationMode::NearestNeighbor);
-                    for (int c = 0; c < channels; ++c) {
-                        it_transf_img(y_buff, x_buff, c) =
-                            it_img(static_cast<int>(transformed_coord[1]),
-                                   static_cast<int>(transformed_coord[0]),
-                                   c);
-                    }
-                }
+                interpolation_method(it_img,
+                                     transformed_coord.data(),
+                                     &it_transf_img(y_buff, x_buff, 0));
 
                 it_mask(y_buff, x_buff, 0) = 255;
             } else {
@@ -745,44 +915,157 @@ void image_transform(const Mat& image,
 
 void generate_mi_space(const Mat& source)
 {
+    using PixelType = uint8_t;
+
     Mat src_sat;
+    const float scale = 0.3f;
     generate_sat<1>(source, src_sat);
     Mat small;
-    scale_from_sat<uint8_t, 1>(src_sat, 0.3f, small);
+    scale_from_sat<PixelType, 1>(src_sat, scale, small);
 
-    const float dt = 10.0f;
+    // clang-format off
+    std::vector<float> scale_data {
+        scale, 0.f, 0.f,
+        0.f, scale, 0.f,
+        0.f, 0.f, 1.f
+    };
+    // clang-format on
+    Eigen::Map<const Matrix3fRowMajor> scale_mat(scale_data.data());
+    Mat small_homog;
+    {
+        Mat tmp_mask;
+        image_transform<PixelType, 1, bilinear_sample<PixelType, 1>>(
+            source,
+            scale_mat.data(),
+            bounding_box_transform(BoundingBox(source), scale_mat.data()),
+            small_homog,
+            tmp_mask);
+    }
+
+    /// Translation
+    const float dt = 5.f;
     for (float y = -dt; y <= dt; y += 0.1f) {
         for (float x = -dt; x <= dt; x += 0.1f) {
 
             // clang-format off
-            std::vector<float> homography {
+            std::vector<float> translation_data {
                 1.f, 0.f, x,
                 0.f, 1.f, y,
                 0.f, 0.f, 1.f
             };
             // clang-format on
+            Eigen::Map<const Matrix3fRowMajor> translate(
+                translation_data.data());
+            Matrix3fRowMajor scale_and_translate = translate * scale_mat;
 
             Mat transformed_mask;
             Mat transformed_img;
 
-            BoundingBox input_bb = BoundingBox(small);
+            BoundingBox input_bb = BoundingBox(small_homog);
 
             BoundingBox output_bb = bounding_box_intersect(
-                bounding_box_transform(input_bb, homography.data()), input_bb);
-            Mat cropped_img = image_crop<uint8_t>(small, output_bb);
-            image_transform<uint8_t, 1, InterpolationMode::Bilinear>(
-                small,
-                homography.data(),
+                bounding_box_transform(input_bb, translate.data()), input_bb);
+            Mat cropped_img = image_crop<PixelType>(small_homog, output_bb);
+            image_transform<PixelType, 1, bilinear_sample<PixelType, 1>>(
+                source,
+                scale_and_translate.data(),
                 output_bb,
                 transformed_img,
                 transformed_mask);
-            double mi = mutual_information(
+            double mi = mutual_information<PixelType>(
                 cropped_img, transformed_img, transformed_mask);
 
             std::cout << mi << " ";
         }
         std::cout << std::endl;
     }
+
+    /*
+    /// Rotation
+    const float dtheta = 180.0f / 180.f;
+    for (float y = -dtheta; y <= dtheta; y += 1.0f / 180.f) {
+        float y_rad = y * static_cast<float>(M_PI) / 180.f;
+        // clang-format off
+        std::vector<float> recenter_data {
+            1.f, 0.f, static_cast<float>(small.cols) / 2.f,
+            0.f, 1.f, static_cast<float>(small.rows) / 2.f,
+            0.f, 0.f, 1.f
+        };
+        std::vector<float> rotate_data {
+            std::cos(y_rad), -std::sin(y_rad), 0,
+            std::sin(y_rad), std::cos(y_rad), 0,
+            0.f, 0.f, 1.f
+        };
+        // clang-format on
+
+        Eigen::Map<const Matrix3fRowMajor> recenter(recenter_data.data());
+        Eigen::Map<const Matrix3fRowMajor> rotate(rotate_data.data());
+        Matrix3fRowMajor transform = recenter * rotate * recenter.inverse();
+
+        Mat transformed_mask;
+        Mat transformed_img;
+
+        BoundingBox input_bb = BoundingBox(small);
+
+        BoundingBox output_bb = bounding_box_intersect(
+            bounding_box_transform(input_bb, transform.data()), input_bb);
+        Mat cropped_img = image_crop<PixelType>(small, output_bb);
+        image_transform<PixelType, 1, jitter_sample<PixelType, 1>>(
+            small,
+            transform.data(),
+            output_bb,
+            transformed_img,
+            transformed_mask);
+        double mi = mutual_information<PixelType>(
+            cropped_img, transformed_img, transformed_mask);
+
+        std::cout << mi << " ";
+    }
+    std::cout << std::endl;
+    */
+
+    /// Perspective
+    /*
+    const float dvalue = 0.00001f;
+    for (float y = -dvalue; y <= dvalue; y += 0.000001f / 2.0f) {
+        for (float x = -dvalue; x <= dvalue; x += 0.000001f / 2.0f) {
+            // clang-format off
+            std::vector<float> perspective_data {
+                1.f, 0.f, 0.f,
+                0.f, 1.f, 0.f,
+                x, y, 1.f
+            };
+            // clang-format on
+
+            Eigen::Map<const Matrix3fRowMajor> perspective(
+                perspective_data.data());
+
+            Matrix3fRowMajor transform = perspective * scale_mat;
+
+            Mat transformed_mask;
+            Mat transformed_img;
+
+            BoundingBox input_bb = BoundingBox(small_homog);
+
+            BoundingBox output_bb = bounding_box_intersect(
+                bounding_box_transform(input_bb, perspective.data()), input_bb);
+            Mat cropped_img = image_crop<PixelType>(small_homog, output_bb);
+
+            image_transform<PixelType, 1, bilinear_sample<PixelType, 1>>(
+                source,
+                transform.data(),
+                output_bb,
+                transformed_img,
+                transformed_mask);
+
+            double mi = mutual_information<PixelType>(
+                cropped_img, transformed_img, transformed_mask);
+
+            std::cout << mi << " ";
+        }
+        std::cout << std::endl;
+    }
+    */
 
     return;
 }

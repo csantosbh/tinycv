@@ -73,23 +73,8 @@ void Mat::compute_flags(int channels)
 {
     const int CV_CN_SHIFT = 4;
 
-    flags_ = (channels - 1) << CV_CN_SHIFT;
-
-    if (is_same<T, uint8_t>::value) {
-        flags_ |= static_cast<int>(Type::UINT8);
-    } else if (is_same<T, uint16_t>::value) {
-        flags_ |= static_cast<int>(Type::UINT16);
-    } else if (is_same<T, int16_t>::value) {
-        flags_ |= static_cast<int>(Type::INT16);
-    } else if (is_same<T, int32_t>::value) {
-        flags_ |= static_cast<int>(Type::INT32);
-    } else if (is_same<T, float>::value) {
-        flags_ |= static_cast<int>(Type::FLOAT32);
-    } else if (is_same<T, double>::value) {
-        flags_ |= static_cast<int>(Type::FLOAT64);
-    } else if (is_same<T, uint32_t>::value) {
-        flags_ |= static_cast<int>(Type::UINT32);
-    }
+    flags_ = (channels - 1) << CV_CN_SHIFT |
+             static_cast<int>(Mat::get_type_enum<T>());
 }
 
 Mat::Type Mat::type() const
@@ -176,11 +161,19 @@ template Mat& Mat::create<uint8_t>(int rows, int cols, int channels);
 
 template Mat& Mat::create<int32_t>(int rows, int cols, int channels);
 
+template Mat& Mat::create<float>(int rows, int cols, int channels);
+
 template Mat& Mat::create_from_buffer<uint8_t>(uint8_t* ptr,
                                                int rows,
                                                int cols,
                                                int channels,
                                                size_t stride);
+
+template Mat& Mat::create_from_buffer<float>(float* ptr,
+                                             int rows,
+                                             int cols,
+                                             int channels,
+                                             size_t stride);
 
 template uint8_t& Mat::Iterator<uint8_t>::
 operator()(int row, int col, int chan);
@@ -188,8 +181,13 @@ operator()(int row, int col, int chan);
 template SatType& Mat::Iterator<SatType>::
 operator()(int row, int col, int chan);
 
+template float& Mat::Iterator<float>::operator()(int row, int col, int chan);
+
 template const uint8_t& Mat::ConstIterator<uint8_t>::
 operator()(int row, int col, int chan) const;
 
 template const SatType& Mat::ConstIterator<SatType>::
+operator()(int row, int col, int chan) const;
+
+template const float& Mat::ConstIterator<float>::
 operator()(int row, int col, int chan) const;

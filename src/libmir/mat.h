@@ -50,6 +50,25 @@ class Mat
 
     size_t row_stride() const;
 
+    template<typename PixelType>
+    static Type get_type_enum() {
+        if (std::is_same<PixelType, uint8_t>::value) {
+            return Type::UINT8;
+        } else if (std::is_same<PixelType, uint16_t>::value) {
+            return Type::UINT16;
+        } else if (std::is_same<PixelType, int16_t>::value) {
+            return Type::INT16;
+        } else if (std::is_same<PixelType, int32_t>::value) {
+            return Type::INT32;
+        } else if (std::is_same<PixelType, float>::value) {
+            return Type::FLOAT32;
+        } else if (std::is_same<PixelType, double>::value) {
+            return Type::FLOAT64;
+        } else if (std::is_same<PixelType, uint32_t>::value) {
+            return Type::UINT32;
+        }
+    }
+
     template <typename T>
     struct Iterator
     {
