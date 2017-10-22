@@ -1,6 +1,8 @@
 #include <iostream>
 #include <memory>
 
+#include <Eigen/Eigen>
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "../libmir/registration.h"
 #include <stb/stb_image.h>
@@ -43,7 +45,7 @@ int main(int argc, char** argv)
         stb_destination.get(), height, width, channels, width * channels);
 
     Eigen::Vector2f translation;
-    register_translation(source, destination, translation);
+    register_translation(source, destination, translation.data());
 
     return 0;
 }

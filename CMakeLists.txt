@@ -17,6 +17,7 @@ set(MIR_CXX_Options
 
 # Source files
 set(LibMIR_SourceFiles
+    src/libmir/bounding_box.cpp
     src/libmir/mat.cpp
     src/libmir/math.cpp
     src/libmir/registration.cpp
