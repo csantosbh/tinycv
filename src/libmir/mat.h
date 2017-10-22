@@ -1,6 +1,7 @@
 #ifndef _LIBMIR_MAT_H_
 #define _LIBMIR_MAT_H_
 
+#include <cassert>
 #include <memory>
 
 struct BoundingBox;
@@ -37,8 +38,33 @@ class Mat
                             int channels,
                             size_t stride);
 
-    template <typename T>
+    template <typename PixelType>
     Mat& create(int rows, int cols, int channels);
+
+    template <typename PixelType>
+    Mat& create(int rows,
+                int cols,
+                int channels,
+                const std::initializer_list<PixelType>& fill_data)
+    {
+        assert(fill_data.size() == static_cast<size_t>(rows * cols * channels));
+
+        this->create<PixelType>(rows, cols, channels);
+
+        auto src_it = fill_data.begin();
+        Iterator<PixelType> dst_it(*this);
+
+        for (int y = 0; y < rows; ++y) {
+            for (int x = 0; x < cols; ++x) {
+                for(int c = 0; c < channels; ++c) {
+                    dst_it(y, x, c) = *src_it;
+                    ++src_it;
+                }
+            }
+        }
+
+        return *this;
+    }
 
     Type type() const;
 
@@ -50,8 +76,9 @@ class Mat
 
     size_t row_stride() const;
 
-    template<typename PixelType>
-    static Type get_type_enum() {
+    template <typename PixelType>
+    static Type get_type_enum()
+    {
         if (std::is_same<PixelType, uint8_t>::value) {
             return Type::UINT8;
         } else if (std::is_same<PixelType, uint16_t>::value) {
@@ -104,7 +131,7 @@ class Mat
     };
 
     /// Friends
-    template<typename T>
+    template <typename T>
     friend Mat image_crop(const Mat& image, const BoundingBox& crop_bb);
 
   private:

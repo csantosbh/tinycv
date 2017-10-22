@@ -121,6 +121,159 @@ void image_transform(const Mat& image,
     return;
 }
 
+/**
+ * Separable kernel convolution
+ */
+template <typename InputPixelType, typename OutputPixelType, int channels>
+void image_convolve(const Mat& image,
+                    const Mat& kernel_v,
+                    const Mat& kernel_h,
+                    const float kernel_norm_factor,
+                    Mat& output_image)
+{
+    assert(kernel_v.cols % 2 == 1);
+    assert(kernel_v.rows == 1);
+    assert(kernel_h.cols % 2 == 1);
+    assert(kernel_h.rows == 1);
+
+    assert(kernel_v.type() == Mat::Type::FLOAT32);
+    assert(kernel_h.type() == Mat::Type::FLOAT32);
+
+    int border_v = (kernel_v.cols - 1) / 2;
+    int border_h = (kernel_h.cols - 1) / 2;
+
+    Mat::ConstIterator<float> kernel_v_it(kernel_v);
+    Mat::ConstIterator<float> kernel_h_it(kernel_h);
+
+    // Create output image for first pass
+    Mat output_vertical_pass;
+    output_vertical_pass.create<OutputPixelType>(
+        image.rows - 2 * border_v, image.cols, channels);
+
+    // Create output image for second pass
+    output_image.create<OutputPixelType>(
+        image.rows - 2 * border_v, image.cols - 2 * border_h, channels);
+
+    // Convolution core
+    enum class ConvolutionDirection { Horizontal, Vertical };
+    const auto convolve = [](const ConvolutionDirection direction,
+                             const Mat::ConstIterator<float>& kernel_it,
+                             const float norm_factor,
+                             const auto& input_it,
+                             Mat::Iterator<OutputPixelType>& output_it) {
+        for (int y = 0; y < output_it.m.rows; ++y) {
+            for (int x = 0; x < output_it.m.cols; ++x) {
+                for (int c = 0; c < output_it.m.channels(); ++c) {
+                    float conv_sum = 0.f;
+
+                    for (int n = 0; n < kernel_it.m.cols; ++n) {
+                        auto input_pix =
+                            (direction == ConvolutionDirection::Vertical)
+                                ? input_it(y + n, x, c)
+                                : input_it(y, x + n, c);
+
+                        conv_sum += kernel_it(0, n, 0) * input_pix;
+                    }
+
+                    float normalized_pix = conv_sum * norm_factor;
+                    if (std::is_integral<OutputPixelType>::value) {
+                        normalized_pix = std::round(normalized_pix);
+                    }
+
+                    output_it(y, x, c) =
+                        static_cast<OutputPixelType>(normalized_pix);
+                }
+            }
+        }
+    };
+
+    // First pass: Vertical convolution
+    Mat::Iterator<OutputPixelType> first_pass_it(output_vertical_pass);
+    convolve(ConvolutionDirection::Vertical,
+             kernel_v_it,
+             1.f,
+             Mat::ConstIterator<InputPixelType>(image),
+             first_pass_it);
+
+    // Second pass: Horizontal convolution
+    Mat::Iterator<OutputPixelType> second_pass_it(output_image);
+    convolve(ConvolutionDirection::Horizontal,
+             kernel_h_it,
+             kernel_norm_factor,
+             Mat::ConstIterator<OutputPixelType>(output_vertical_pass),
+             second_pass_it);
+
+    return;
+}
+
+enum class ImageDerivativeAxis { dX, dY };
+template <typename InputPixelType, typename OutputPixelType, int channels>
+void derivative_holoborodko_impl(
+    const Mat& image,
+    ImageDerivativeAxis axis,
+    const std::initializer_list<float>& high_pass_component,
+    const std::initializer_list<float>& low_pass_component,
+    const float norm_factor,
+    Mat& output_image)
+{
+    assert(std::is_signed<OutputPixelType>::value);
+    assert(high_pass_component.size() == low_pass_component.size());
+
+    Mat horizontal_kernel;
+    Mat vertical_kernel;
+
+    const int kernel_length = static_cast<int>(high_pass_component.size());
+
+    if (axis == ImageDerivativeAxis::dX) {
+        horizontal_kernel.create<float>(
+            1, kernel_length, 1, high_pass_component);
+
+        vertical_kernel.create<float>(1, kernel_length, 1, low_pass_component);
+    } else {
+        assert(axis == ImageDerivativeAxis::dY);
+
+        horizontal_kernel.create<float>(
+            1, kernel_length, 1, low_pass_component);
+
+        vertical_kernel.create<float>(1, kernel_length, 1, high_pass_component);
+    }
+
+    image_convolve<InputPixelType, OutputPixelType, channels>(
+        image, vertical_kernel, horizontal_kernel, norm_factor, output_image);
+}
+
+enum class FilterOrder { Fifth, Seventh };
+template <typename InputPixelType, typename OutputPixelType, int channels>
+void derivative_holoborodko(const Mat& image,
+                            ImageDerivativeAxis axis,
+                            FilterOrder filter_order,
+                            Mat& output_image)
+{
+    // Sample kernels:
+    // [1 2 1]' * [-1 -2 0 2 1], border: 1 row, 2 cols
+    // [1 4 6 4 1]' * [-1 -4 -5 0 5 4 1], border: 2 rows, 3 cols
+
+    if (filter_order == FilterOrder::Fifth) {
+        derivative_holoborodko_impl<InputPixelType, OutputPixelType, channels>(
+            image,
+            axis,
+            {-1, -2, 0, 2, 1},
+            {1, 1, 2, 1, 1},
+            1.f / 24.f,
+            output_image);
+    } else {
+        assert(filter_order == FilterOrder::Seventh);
+
+        derivative_holoborodko_impl<InputPixelType, OutputPixelType, channels>(
+            image,
+            axis,
+            {-1, -4, -5, 0, 5, 4, 1},
+            {1, 1, 4, 6, 4, 1, 1},
+            1.f / 200.f,
+            output_image);
+    }
+}
+
 void generate_mi_space(const Mat& source)
 {
     using PixelType = uint8_t;
@@ -151,7 +304,7 @@ void generate_mi_space(const Mat& source)
     }
 
     /// Translation
-    const float dt = 5.f;
+    const float dt = 10.f;
     for (float y = -dt; y <= dt; y += 0.1f) {
         for (float x = -dt; x <= dt; x += 0.1f) {
 
@@ -278,6 +431,30 @@ void generate_mi_space(const Mat& source)
     return;
 }
 
+void test_image_derivative(const Mat& source)
+{
+    Mat dx;
+    Mat dy;
+    Mat dxy;
+
+    derivative_holoborodko<uint8_t, float, 1>(
+        source, ImageDerivativeAxis::dX, FilterOrder::Fifth, dx);
+
+    derivative_holoborodko<uint8_t, float, 1>(
+        source, ImageDerivativeAxis::dY, FilterOrder::Fifth, dy);
+
+    derivative_holoborodko<float, float, 1>(
+        dx, ImageDerivativeAxis::dY, FilterOrder::Fifth, dxy);
+
+    Mat cropped = image_crop<uint8_t>(
+        source,
+        BoundingBox({{{2, 2}},
+                     {{static_cast<float>(source.cols) - 3,
+                       static_cast<float>(source.rows - 3)}}}));
+
+    return;
+}
+
 bool register_translation(const Mat& source,
                           const Mat& destination,
                           float* translation)
@@ -351,8 +528,10 @@ bool register_translation(const Mat& source,
                                 interest_bb,
                                 transformed_source,
                                 transformed_mask);
-                                */
 
     generate_mi_space(source);
+    */
+    test_image_derivative(source);
+
     return true;
 }

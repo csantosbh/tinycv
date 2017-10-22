@@ -159,6 +159,8 @@ const T& Mat::ConstIterator<T>::operator()(int row, int col, int chan) const
 
 template Mat& Mat::create<uint8_t>(int rows, int cols, int channels);
 
+template Mat& Mat::create<int16_t>(int rows, int cols, int channels);
+
 template Mat& Mat::create<int32_t>(int rows, int cols, int channels);
 
 template Mat& Mat::create<float>(int rows, int cols, int channels);
@@ -178,12 +180,19 @@ template Mat& Mat::create_from_buffer<float>(float* ptr,
 template uint8_t& Mat::Iterator<uint8_t>::
 operator()(int row, int col, int chan);
 
+template int16_t& Mat::Iterator<int16_t>::
+operator()(int row, int col, int chan);
+
 template SatType& Mat::Iterator<SatType>::
 operator()(int row, int col, int chan);
 
-template float& Mat::Iterator<float>::operator()(int row, int col, int chan);
+template float& Mat::Iterator<float>::
+operator()(int row, int col, int chan);
 
 template const uint8_t& Mat::ConstIterator<uint8_t>::
+operator()(int row, int col, int chan) const;
+
+template const int16_t& Mat::ConstIterator<int16_t>::
 operator()(int row, int col, int chan) const;
 
 template const SatType& Mat::ConstIterator<SatType>::
