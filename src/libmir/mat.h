@@ -42,21 +42,19 @@ class Mat
     Mat& create(int rows, int cols, int channels);
 
     template <typename PixelType>
-    Mat& create(int rows,
-                int cols,
-                int channels,
-                const std::initializer_list<PixelType>& fill_data)
+    Mat& operator<<(const std::initializer_list<PixelType>& fill_data)
     {
-        assert(fill_data.size() == static_cast<size_t>(rows * cols * channels));
+        const int num_channels = channels();
 
-        this->create<PixelType>(rows, cols, channels);
+        assert(fill_data.size() ==
+               static_cast<size_t>(rows * cols * num_channels));
 
         auto src_it = fill_data.begin();
         Iterator<PixelType> dst_it(*this);
 
         for (int y = 0; y < rows; ++y) {
             for (int x = 0; x < cols; ++x) {
-                for(int c = 0; c < channels; ++c) {
+                for (int c = 0; c < num_channels; ++c) {
                     dst_it(y, x, c) = *src_it;
                     ++src_it;
                 }

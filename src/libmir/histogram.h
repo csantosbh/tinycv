@@ -27,29 +27,83 @@ class BSpline4
 
     static float histogram_bin_function(float i)
     {
+        float result;
+
         if (i < -2.f) {
-            return 0.f;
+            // i < -2.0
+            result = 0.f;
         } else if (i < -1.f) {
+            // -2.0 <= i < -1.0
             float k = (2.f + i);
 
-            return k * k * k / 6.f;
+            result = k * k * k / 6.f;
         } else if (i < 0.f) {
+            // -1.0 <= i < 0.0
             float k = 1.f + i;
 
-            return (1.f + 3.f * k + 3 * k * k - 3.f * k * k * k) / 6.f;
+            result = (1.f + 3.f * k + 3 * k * k - 3.f * k * k * k) / 6.f;
         } else if (i < 1.f) {
+            // 0.0 <= i < 1.0
             float k = 1.f - i;
 
-            return (1.f + 3.f * k + 3 * k * k - 3.f * k * k * k) / 6.f;
+            result = (1.f + 3.f * k + 3 * k * k - 3.f * k * k * k) / 6.f;
         } else if (i < 2.f) {
+            // 1.0 <= i < 2.0
             float k = (2.f - i);
 
-            return k * k * k / 6.f;
+            result = k * k * k / 6.f;
         } else {
-            assert(i >= 2.f);
+            // 2.0 <= i
+            assert(2.f <= i);
 
-            return 0.f;
+            result = 0.f;
         }
+
+        return result;
+    }
+
+    /*
+     * Derivative of the Histogram Bin Function at point i
+     */
+    static float hbf_derivative(float i)
+    {
+        const auto b_spline_3 = [](float i) -> float {
+            float result;
+
+            if (i < -1.5) {
+                // i < -1.5
+                result = 0.f;
+            } else if (i < -0.5) {
+                // -1.5 <= i < -0.5
+                float k = (1.5f + i);
+
+                result = k * k / 2.f;
+            } else if (i < 0.f) {
+                // -0.5 <= i < 0.0
+                float k = 0.5f + i;
+
+                result = 1 + i - k * k;
+            } else if (i < 0.5f) {
+                // 0.0 <= i < 0.5
+                float k = 0.5f - i;
+
+                result = 1 - i - k * k;
+            } else if (i < 1.5) {
+                // 0.5 <= i < 1.5
+                float k = 1.5f - i;
+
+                result = k * k / 2.f;
+            } else {
+                // 1.5 <= i
+                assert(1.5 <= i);
+
+                result = 0.f;
+            }
+
+            return result;
+        };
+
+        return b_spline_3(i + 0.5f) - b_spline_3(i - 0.5f);
     }
 };
 

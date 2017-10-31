@@ -224,18 +224,17 @@ void derivative_holoborodko_impl(
 
     const int kernel_length = static_cast<int>(high_pass_component.size());
 
-    if (axis == ImageDerivativeAxis::dX) {
-        horizontal_kernel.create<float>(
-            1, kernel_length, 1, high_pass_component);
+    horizontal_kernel.create<float>(1, kernel_length, 1);
+    vertical_kernel.create<float>(1, kernel_length, 1);
 
-        vertical_kernel.create<float>(1, kernel_length, 1, low_pass_component);
+    if (axis == ImageDerivativeAxis::dX) {
+        horizontal_kernel << high_pass_component;
+        vertical_kernel << low_pass_component;
     } else {
         assert(axis == ImageDerivativeAxis::dY);
 
-        horizontal_kernel.create<float>(
-            1, kernel_length, 1, low_pass_component);
-
-        vertical_kernel.create<float>(1, kernel_length, 1, high_pass_component);
+        horizontal_kernel << low_pass_component;
+        vertical_kernel << high_pass_component;
     }
 
     image_convolve<InputPixelType, OutputPixelType, channels>(
@@ -431,6 +430,35 @@ void generate_mi_space(const Mat& source)
     return;
 }
 
+template <typename T>
+void homography_derivative(const T* xy, const T* H, Mat& output)
+{
+    if (output.empty()) {
+        output.create<T>(2, 8, 1);
+    }
+
+    const T& x = xy[0];
+    const T& y = xy[0];
+
+    const T x_prime      = H[0] * x + H[1] * y + H[2];
+    const T y_prime      = H[3] * x + H[4] * y + H[5];
+    const T D            = H[6] * x + H[7] * y + static_cast<T>(1.0);
+    const T D_squared    = D * D;
+    const T x_prime_norm = x_prime / D_squared;
+    const T y_prime_norm = y_prime / D_squared;
+
+    // clang-format off
+    output << std::initializer_list<float>{
+        x / D, y / D, static_cast<T>(1.0) / D,
+          0, 0, 0,
+          -x * x_prime_norm, -y * x_prime_norm,
+        0, 0, 0,
+          x / D, y / D, static_cast<T>(1.0) / D,
+          -x * y_prime_norm, -y * y_prime_norm
+    };
+    // clang-format on
+}
+
 void test_image_derivative(const Mat& source)
 {
     Mat dx;
@@ -453,6 +481,21 @@ void test_image_derivative(const Mat& source)
                        static_cast<float>(source.rows - 3)}}}));
 
     return;
+}
+
+void test_bspline_4()
+{
+    const float LIM = 3.0f;
+    using std::vector;
+
+    const float eps = 1e-3f;
+
+    for (float i = -LIM; i <= LIM; i += 0.01f) {
+        std::cout << (BSpline4::histogram_bin_function(i + eps) -
+                      BSpline4::histogram_bin_function(i)) /
+                         eps
+                  << " " << BSpline4::hbf_derivative(i) << std::endl;
+    }
 }
 
 bool register_translation(const Mat& source,
@@ -532,6 +575,21 @@ bool register_translation(const Mat& source,
     generate_mi_space(source);
     */
     test_image_derivative(source);
+    test_bspline_4();
+    Mat dh;
+
+    /*
+    // clang-format off
+    const float xy[]{0.0f, 0.0f};
+    const float H[]{
+        1.f, 0.f, 0.f,
+        0.f, 1.f, 0.f,
+        0.f, 0.f, 1.f,
+    };
+    // clang-format on
+
+    homography_derivative(xy, H, dh);
+    */
 
     return true;
 }
