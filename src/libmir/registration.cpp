@@ -430,31 +430,102 @@ void generate_mi_space(const Mat& source)
     return;
 }
 
+/**
+ * Jacobian of the Affine transform w(coordinate, Dp) evaluated at Dp=0
+ */
 template <typename T>
-void homography_derivative(const T* xy, const T* H, Mat& output)
+void affine_jacobian_origin(const T* coordinate, Mat& output)
+{
+    if (output.empty()) {
+        output.create<T>(2, 6, 1);
+    }
+
+    const T& x = coordinate[0];
+    const T& y = coordinate[1];
+
+    // clang-format off
+    output << std::initializer_list<T>{
+        x, y, static_cast<T>(1.0), 0, 0, 0,
+        0, 0, 0, x, y, static_cast<T>(1.0)
+    };
+    // clang-format on
+}
+
+/**
+ * Jacobian of the Homography transform w(coordinate, Dp) evaluated at Dp=0
+ */
+template <typename T>
+void homography_jacobian_origin(const T* coordinate, Mat& output)
 {
     if (output.empty()) {
         output.create<T>(2, 8, 1);
     }
 
-    const T& x = xy[0];
-    const T& y = xy[0];
+    const T& x = coordinate[0];
+    const T& y = coordinate[1];
 
-    const T x_prime      = H[0] * x + H[1] * y + H[2];
-    const T y_prime      = H[3] * x + H[4] * y + H[5];
-    const T D            = H[6] * x + H[7] * y + static_cast<T>(1.0);
-    const T D_squared    = D * D;
-    const T x_prime_norm = x_prime / D_squared;
-    const T y_prime_norm = y_prime / D_squared;
+    const T xy = x * y;
 
     // clang-format off
-    output << std::initializer_list<float>{
-        x / D, y / D, static_cast<T>(1.0) / D,
-          0, 0, 0,
-          -x * x_prime_norm, -y * x_prime_norm,
-        0, 0, 0,
-          x / D, y / D, static_cast<T>(1.0) / D,
-          -x * y_prime_norm, -y * y_prime_norm
+    output << std::initializer_list<T>{
+        x, y, static_cast<T>(1.0), 0, 0, 0, -x * x, -xy,
+        0, 0, 0, x, y, static_cast<T>(1.0), -xy, -y * y
+    };
+    // clang-format on
+}
+
+template <typename T>
+void homography_hessian_x_origin(const T* coordinate, Mat& output)
+{
+    if (output.empty()) {
+        output.create<T>(8, 8, 1);
+    }
+
+    const T& x = coordinate[0];
+    const T& y = coordinate[1];
+
+    const T xx  = x * x;
+    const T yy  = y * y;
+    const T xy  = x * y;
+
+    // clang-format off
+    output << std::initializer_list<T>{
+        0,     0,  0, 0, 0, 0,        -xx,        -xy,
+        0,     0,  0, 0, 0, 0,        -xy,        -yy,
+        0,     0,  0, 0, 0, 0,         -x,         -y,
+        0,     0,  0, 0, 0, 0,          0,          0,
+        0,     0,  0, 0, 0, 0,          0,          0,
+        0,     0,  0, 0, 0, 0,          0,          0,
+        -xx, -xy, -x, 0, 0, 0, 2 * xx * x, 2 * xy * x,
+        -xy, -yy, -y, 0, 0, 0, 2 * xx * y, 2 * xy * y,
+    };
+    // clang-format on
+}
+
+template <typename T>
+void homography_hessian_y_origin(const T* coordinate, Mat& output)
+{
+    if (output.empty()) {
+        output.create<T>(8, 8, 1);
+    }
+
+    const T& x = coordinate[0];
+    const T& y = coordinate[1];
+
+    const T xx  = x * x;
+    const T yy  = y * y;
+    const T xy  = x * y;
+
+    // clang-format off
+    output << std::initializer_list<T>{
+        0, 0, 0,   0,   0,  0,          0,          0,
+        0, 0, 0,   0,   0,  0,          0,          0,
+        0, 0, 0,   0,   0,  0,          0,          0,
+        0, 0, 0,   0,   0,  0,        -xx,        -xy,
+        0, 0, 0,   0,   0,  0,        -xy,        -yy,
+        0, 0, 0,   0,   0,  0,         -x,         -y,
+        0, 0, 0, -xx, -xy, -x, 2 * xy * x, 2 * yy * x,
+        0, 0, 0, -xy, -yy, -y, 2 * xy * y, 2 * yy * y,
     };
     // clang-format on
 }
@@ -490,11 +561,20 @@ void test_bspline_4()
 
     const float eps = 1e-3f;
 
+    /*
     for (float i = -LIM; i <= LIM; i += 0.01f) {
         std::cout << (BSpline4::histogram_bin_function(i + eps) -
                       BSpline4::histogram_bin_function(i)) /
                          eps
                   << " " << BSpline4::hbf_derivative(i) << std::endl;
+    }
+    */
+
+    for (float i = -LIM; i <= LIM; i += 0.01f) {
+        std::cout << (BSpline4::hbf_derivative(i + eps) -
+                      BSpline4::hbf_derivative(i)) /
+                         eps
+                  << " " << BSpline4::hbf_second_derivative(i) << std::endl;
     }
 }
 
@@ -574,8 +654,11 @@ bool register_translation(const Mat& source,
 
     generate_mi_space(source);
     */
-    test_image_derivative(source);
+
+    // test_image_derivative(source);
+
     test_bspline_4();
+
     Mat dh;
 
     /*

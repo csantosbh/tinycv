@@ -105,6 +105,35 @@ class BSpline4
 
         return b_spline_3(i + 0.5f) - b_spline_3(i - 0.5f);
     }
+
+    /*
+     * Second order derivative of the Histogram Bin Function at point i
+     */
+    static float hbf_second_derivative(float i)
+    {
+        const auto b_spline_2 = [](float i) {
+            float result;
+
+            if (i < -1.f) {
+                // i < -1
+                result = 0.f;
+            } else if (i < 0.f) {
+                // -1 <= i < 0
+                result = 1.f + i;
+            } else if (i < 1.f) {
+                // 0 <= i < 1
+                result = 1.f - i;
+            } else {
+                // 1 <= i
+                result = 0.f;
+            }
+
+            return result;
+        };
+
+        return b_spline_2(i + 1.0f) - 2.f * b_spline_2(i) +
+               b_spline_2(i - 1.0f);
+    }
 };
 
 /**
