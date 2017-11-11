@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "mat.h"
+#include "math.h"
 
 /**
  * Sample pixel at arbitrary coordinate using bilinear interpolation

@@ -58,16 +58,6 @@ void Mat::release()
     data = nullptr;
 }
 
-int Mat::channels() const
-{
-    return static_cast<int>(step.buf[1]);
-}
-
-size_t Mat::row_stride() const
-{
-    return step.buf[0];
-}
-
 template <typename T>
 void Mat::compute_flags(int channels)
 {
@@ -125,36 +115,12 @@ Mat::Iterator<T>& Mat::Iterator<T>::operator=(Mat::Iterator<T>& o)
 }
 
 template <typename T>
-T& Mat::Iterator<T>::operator()(int row, int col, int chan)
-{
-    assert(row >= 0);
-    assert(row < m.rows);
-    assert(col >= 0);
-    assert(col < m.cols);
-
-    return (static_cast<T*>(
-        m.data))[row * m.step.buf[0] + col * m.step.buf[1] + chan];
-}
-
-template <typename T>
 Mat::ConstIterator<T>& Mat::ConstIterator<T>::
 operator=(Mat::ConstIterator<T>& o)
 {
     m = o.m;
 
     return *this;
-}
-
-template <typename T>
-const T& Mat::ConstIterator<T>::operator()(int row, int col, int chan) const
-{
-    assert(row >= 0);
-    assert(row < m.rows);
-    assert(col >= 0);
-    assert(col < m.cols);
-
-    return (static_cast<T*>(
-        m.data))[row * m.step.buf[0] + col * m.step.buf[1] + chan];
 }
 
 template Mat& Mat::create<uint8_t>(int rows, int cols, int channels);

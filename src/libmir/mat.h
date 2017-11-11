@@ -112,15 +112,36 @@ class Mat
         return output;
     }
 
+    template <typename IteratorType>
+    void for_each(const std::function<void(IteratorType&, int, int, int)>& cbk)
+    {
+        IteratorType it(*this);
+        int num_channels = channels();
+
+        for (int y = 0; y < rows; ++y) {
+            for (int x = 0; x < cols; ++x) {
+                for (int c = 0; c < num_channels; ++c) {
+                    cbk(it, y, x, c);
+                }
+            }
+        }
+    }
+
     Type type() const;
 
     bool empty() const;
 
     void release();
 
-    int channels() const;
+    int channels() const
+    {
+        return static_cast<int>(step.buf[1]);
+    }
 
-    size_t row_stride() const;
+    size_t row_stride() const
+    {
+        return step.buf[0];
+    }
 
     template <typename PixelType>
     static Type get_type_enum()
@@ -154,7 +175,16 @@ class Mat
 
         Iterator<T>& operator=(Iterator<T>& o);
 
-        T& operator()(int row, int col, int chan);
+        T& operator()(int row, int col, int chan)
+        {
+            assert(row >= 0);
+            assert(row < m.rows);
+            assert(col >= 0);
+            assert(col < m.cols);
+
+            return (static_cast<T*>(
+                m.data))[row * m.step.buf[0] + col * m.step.buf[1] + chan];
+        }
 
         Mat& m;
     };
@@ -181,7 +211,17 @@ class Mat
 
         ConstIterator<T>& operator=(ConstIterator<T>& o);
 
-        const T& operator()(int row, int col, int chan) const;
+        const T& operator()(int row, int col, int chan) const
+        {
+
+            assert(row >= 0);
+            assert(row < m.rows);
+            assert(col >= 0);
+            assert(col < m.cols);
+
+            return (static_cast<T*>(
+                m.data))[row * m.step.buf[0] + col * m.step.buf[1] + chan];
+        }
 
         const Mat& m;
     };

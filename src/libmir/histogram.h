@@ -205,39 +205,65 @@ void joint_image_histogram(const Mat& image_a,
     // This function works for single channel images only
     assert(image_a.channels() == 1);
     assert(image_b.channels() == 1);
+
     // The input images must have the same dimensions
     assert(image_a.rows == image_b.rows);
     assert(image_a.cols == image_b.cols);
 
+    // Create iterators for input images
     Mat::ConstIterator<PixelType> img_a_it(image_a);
     Mat::ConstIterator<PixelType> img_b_it(image_b);
 
-    const int hist_row_size =
-        NUM_HISTOGRAM_CENTRAL_BINS + 2 * BinningMethod::INFLUENCE_MARGIN;
-
-    // Resize histogram a
-    histogram_a.create<float>(1, hist_row_size, 1).fill<float>(0.f);
-
-    // Resize histogram b
-    histogram_b.create<float>(1, hist_row_size, 1).fill<float>(0.f);
-
-    // Resize histogram ab
-    histogram_ab.create<float>(hist_row_size, hist_row_size, 1)
-        .fill<float>(0.f);
-
-    const PixelType color_max = static_cast<PixelType>(255);
-
-    const int bin_width =
-        (static_cast<int>(color_max) + 1) / NUM_HISTOGRAM_CENTRAL_BINS;
-
-    const float a_bin_map = static_cast<float>(NUM_HISTOGRAM_CENTRAL_BINS) /
-                            static_cast<float>(color_max);
-    const float b_bin_map = -0.5;
-
-    // Iterators for histograms
+    // Create iterators for histograms
     Mat::Iterator<float> hist_a_it(histogram_a);
     Mat::Iterator<float> hist_b_it(histogram_b);
     Mat::Iterator<float> hist_ab_it(histogram_ab);
+
+    const int hist_length =
+        NUM_HISTOGRAM_CENTRAL_BINS + 2 * BinningMethod::INFLUENCE_MARGIN;
+
+    // Resize histogram a
+    if (histogram_a.empty()) {
+        histogram_a.create<float>(1, hist_length, 1);
+    } else {
+        assert(histogram_a.type() == Mat::Type::FLOAT32);
+        assert(histogram_a.rows == 1);
+        assert(histogram_a.cols == hist_length);
+        assert(histogram_a.channels() == 1);
+    }
+
+    // Resize histogram b
+    if (histogram_b.empty()) {
+        histogram_b.create<float>(1, hist_length, 1);
+    } else {
+        assert(histogram_b.type() == Mat::Type::FLOAT32);
+        assert(histogram_b.rows == 1);
+        assert(histogram_b.cols == hist_length);
+        assert(histogram_b.channels() == 1);
+    }
+
+    // Resize histogram ab
+    if (histogram_ab.empty()) {
+        histogram_ab.create<float>(hist_length, hist_length, 1);
+    } else {
+        assert(histogram_ab.type() == Mat::Type::FLOAT32);
+        assert(histogram_ab.rows == hist_length);
+        assert(histogram_ab.cols == hist_length);
+        assert(histogram_ab.channels() == 1);
+    }
+
+    // Initialize histograms
+    histogram_a.fill<float>(0.f);
+    histogram_b.fill<float>(0.f);
+    histogram_ab.fill<float>(0.f);
+
+    // Compute coefficients of linear bin mapping function
+    const PixelType color_max = static_cast<PixelType>(255);
+    const int bin_width =
+        (static_cast<int>(color_max) + 1) / NUM_HISTOGRAM_CENTRAL_BINS;
+    const float a_bin_map = static_cast<float>(NUM_HISTOGRAM_CENTRAL_BINS) /
+                            static_cast<float>(color_max);
+    const float b_bin_map = -0.5;
 
     // Store how much each pixel contribute to all histogram bins that are
     // influenced by its value
@@ -246,6 +272,8 @@ void joint_image_histogram(const Mat& image_a,
     WeightArray bin_weights_a{};
     WeightArray bin_weights_b{};
 
+    // Helper function for computing which histogram bins are affected by a
+    // pixel, and how much
     const auto updateImageHistogram =
         [a_bin_map, b_bin_map, bin_width](
             int y,
@@ -259,27 +287,26 @@ void joint_image_histogram(const Mat& image_a,
             const PixelType& pixel_val = img_it(y, x, 0);
 
             int pixel_bin_rounded = static_cast<int>(pixel_val) / bin_width;
-            pixel_bin             = a_bin_map * pixel_val + b_bin_map;
+            pixel_bin             = a_bin_map * pixel_val + b_bin_map +
+                        BinningMethod::INFLUENCE_MARGIN;
 
-            lower_bin =
-                std::max(-BinningMethod::INFLUENCE_MARGIN,
-                         pixel_bin_rounded - BinningMethod::INFLUENCE_MARGIN);
+            lower_bin = pixel_bin_rounded;
+            upper_bin = pixel_bin_rounded + 2 * BinningMethod::INFLUENCE_MARGIN;
 
-            upper_bin =
-                std::min(pixel_bin_rounded + BinningMethod::INFLUENCE_MARGIN,
-                         NUM_HISTOGRAM_CENTRAL_BINS - 1 +
-                             BinningMethod::INFLUENCE_MARGIN);
+            assert(0 <= lower_bin);
+            assert(lower_bin <= upper_bin);
+            assert(upper_bin <= NUM_HISTOGRAM_CENTRAL_BINS +
+                                    2 * BinningMethod::INFLUENCE_MARGIN - 1);
 
+            // Update weight storage for given pixel
             int bin_weights_idx = 0;
             for (int neighbor = lower_bin; neighbor <= upper_bin; ++neighbor) {
                 const float distance_to_neighbor =
-                    pixel_bin - static_cast<float>(neighbor);
+                    static_cast<float>(neighbor) - pixel_bin;
 
                 bin_weights[bin_weights_idx] =
                     BinningMethod::histogram_bin_function(distance_to_neighbor);
-                histogram_it(0,
-                             neighbor + BinningMethod::INFLUENCE_MARGIN,
-                             0) += bin_weights[bin_weights_idx];
+                histogram_it(0, neighbor, 0) += bin_weights[bin_weights_idx];
                 bin_weights_idx++;
             }
         };
@@ -327,14 +354,9 @@ void joint_image_histogram(const Mat& image_a,
                          neighbor_a <= upper_bin_a;
                          ++neighbor_a) {
 
-                        const int hist_row =
-                            neighbor_b + BinningMethod::INFLUENCE_MARGIN;
-                        const int hist_col =
-                            neighbor_a + BinningMethod::INFLUENCE_MARGIN;
-
                         const int bin_weight_a_idx = neighbor_a - lower_bin_a;
 
-                        hist_ab_it(hist_row, hist_col, 0) +=
+                        hist_ab_it(neighbor_b, neighbor_a, 0) +=
                             bin_weights_a[bin_weight_a_idx] *
                             bin_weights_b[bin_weight_b_idx];
                     }
@@ -382,23 +404,52 @@ void joint_hist_gradient(const Mat& reference,
     Mat::ConstIterator<PixelType> img_t_it(tracked);
     Mat::ConstIterator<SteepestType> steepest_it(steepest_ref_img);
 
-    const int hist_length =
-        NUM_HISTOGRAM_CENTRAL_BINS + 2 * BinningMethod::INFLUENCE_MARGIN;
-    // Resize histogram of reference image
-    histogram_r.create<float>(1, hist_length, 1).fill<float>(0.f);
-
-    // Resize joint histogram
-    histogram_rt.create<float>(hist_length, hist_length, 1).fill<float>(0.f);
-
-    // Resize joint histogram gradient
-    const int model_num_params = steepest_ref_img.channels();
-    histogram_rt_grad.create<float>(hist_length, hist_length, model_num_params)
-        .fill<float>(0.f);
-
     // Create histogram iterators
     Mat::Iterator<float> hist_r_it(histogram_r);
     Mat::Iterator<float> hist_rt_it(histogram_rt);
     Mat::Iterator<float> hist_rt_grad_it(histogram_rt_grad);
+
+    ///
+    // Allocate and initialize histograms
+    const int hist_length =
+        NUM_HISTOGRAM_CENTRAL_BINS + 2 * BinningMethod::INFLUENCE_MARGIN;
+    const int model_num_params = steepest_ref_img.channels();
+
+    // Resize histogram of reference image
+    if (histogram_r.empty()) {
+        histogram_r.create<float>(1, hist_length, 1);
+    } else {
+        assert(histogram_r.type() == Mat::Type::FLOAT32);
+        assert(histogram_r.rows == 1);
+        assert(histogram_r.cols == hist_length);
+        assert(histogram_r.channels() == 1);
+    }
+
+    // Resize joint histogram
+    if (histogram_rt.empty()) {
+        histogram_rt.create<float>(hist_length, hist_length, 1);
+    } else {
+        assert(histogram_rt.type() == Mat::Type::FLOAT32);
+        assert(histogram_rt.rows == hist_length);
+        assert(histogram_rt.cols == hist_length);
+        assert(histogram_rt.channels() == 1);
+    }
+
+    // Resize joint histogram gradient
+    if (histogram_rt_grad.empty()) {
+        histogram_rt_grad.create<float>(
+            hist_length, hist_length, model_num_params);
+    } else {
+        assert(histogram_rt_grad.type() == Mat::Type::FLOAT32);
+        assert(histogram_rt_grad.rows == hist_length);
+        assert(histogram_rt_grad.cols == hist_length);
+        assert(histogram_rt_grad.channels() == model_num_params);
+    }
+
+    // Initialize histograms
+    histogram_r.fill<float>(0.f);
+    histogram_rt.fill<float>(0.f);
+    histogram_rt_grad.fill<float>(0.f);
 
     // Compute coefficients of linear bin mapping function
     const PixelType color_max = static_cast<PixelType>(255);
@@ -431,22 +482,23 @@ void joint_hist_gradient(const Mat& reference,
 
             // Compute pixel bin coordinate
             int pixel_bin_rounded = static_cast<int>(pixel_val) / bin_width;
-            pixel_bin             = a_bin_map * pixel_val + b_bin_map;
+            pixel_bin             = a_bin_map * pixel_val + b_bin_map +
+                        BinningMethod::INFLUENCE_MARGIN;
 
             // Compute bin index range for the weight vector
-            lower_bin = pixel_bin_rounded - BinningMethod::INFLUENCE_MARGIN;
-            upper_bin = pixel_bin_rounded + BinningMethod::INFLUENCE_MARGIN;
+            lower_bin = pixel_bin_rounded;
+            upper_bin = pixel_bin_rounded + 2 * BinningMethod::INFLUENCE_MARGIN;
 
-            assert(-BinningMethod::INFLUENCE_MARGIN <= lower_bin);
+            assert(0 <= lower_bin);
             assert(lower_bin <= upper_bin);
-            assert(upper_bin <= NUM_HISTOGRAM_CENTRAL_BINS - 1 +
-                                    BinningMethod::INFLUENCE_MARGIN);
+            assert(upper_bin <= NUM_HISTOGRAM_CENTRAL_BINS +
+                                    2 * BinningMethod::INFLUENCE_MARGIN - 1);
 
             // Update weight storage for given pixel
             int bin_weights_idx = 0;
             for (int neighbor = lower_bin; neighbor <= upper_bin; ++neighbor) {
                 const float distance_to_neighbor =
-                    pixel_bin - static_cast<float>(neighbor);
+                    static_cast<float>(neighbor) - pixel_bin;
 
                 bin_weights[bin_weights_idx] =
                     BinningMethod::histogram_bin_function(distance_to_neighbor);
@@ -482,14 +534,12 @@ void joint_hist_gradient(const Mat& reference,
                 for (int neighbor = lower_bin_r; neighbor <= upper_bin_r;
                      ++neighbor) {
                     const float distance_to_neighbor =
-                        pixel_bin_r - static_cast<float>(neighbor);
+                        static_cast<float>(neighbor) - pixel_bin_r;
 
                     bin_weights_r_derivative[bin_weights_idx] =
                         BinningMethod::hbf_derivative(distance_to_neighbor);
 
-                    hist_r_it(0,
-                              neighbor + BinningMethod::INFLUENCE_MARGIN,
-                              0) += bin_weights_r[bin_weights_idx];
+                    hist_r_it(0, neighbor, 0) += bin_weights_r[bin_weights_idx];
 
                     bin_weights_idx++;
                 }
@@ -515,15 +565,10 @@ void joint_hist_gradient(const Mat& reference,
                          neighbor_r <= upper_bin_r;
                          ++neighbor_r) {
 
-                        const int hist_row =
-                            neighbor_t + BinningMethod::INFLUENCE_MARGIN;
-                        const int hist_col =
-                            neighbor_r + BinningMethod::INFLUENCE_MARGIN;
-
                         const int bin_weight_r_idx = neighbor_r - lower_bin_r;
 
                         // Update joint histogram
-                        hist_rt_it(hist_row, hist_col, 0) +=
+                        hist_rt_it(neighbor_t, neighbor_r, 0) +=
                             bin_weights_r[bin_weight_r_idx] *
                             bin_weights_t[bin_weight_t_idx];
 
@@ -533,7 +578,7 @@ void joint_hist_gradient(const Mat& reference,
                             bin_weights_r_derivative[bin_weight_r_idx];
 
                         float* grad_ptr =
-                            &hist_rt_grad_it(hist_row, hist_col, 0);
+                            &hist_rt_grad_it(neighbor_t, neighbor_r, 0);
 
                         for (int param = 0; param < model_num_params; ++param) {
                             grad_ptr[param] +=
@@ -556,6 +601,5 @@ void joint_hist_gradient(const Mat& reference,
 
     return;
 }
-
 
 #endif

@@ -349,9 +349,9 @@ void generate_mi_space(const Mat& source)
     }
 
     /// Translation
-    const float dt = 10.f;
-    for (float y = -dt; y <= dt; y += 0.1f) {
-        for (float x = -dt; x <= dt; x += 0.1f) {
+    const float dt = 20.f;
+    for (float y = 0; y <= 0; y += 0.1f) {
+        for (float x = -dt; x <= dt; x += 0.05f) {
 
             // clang-format off
             std::vector<float> translation_data {
@@ -674,9 +674,9 @@ void mutual_information_gradient(const Mat& reference,
                 float hist_at_ij = hist_rt_it(i, j, 0);
                 float hist_at_j  = hist_r_it(0, j, 0);
 
-                if (hist_at_j > 0.f) {
+                if (hist_at_ij > 0.f) {
                     gradient_it(0, param, 0) +=
-                        grad_at_ij * std::log(1.f + hist_at_ij / hist_at_j);
+                        grad_at_ij * std::log(hist_at_ij / hist_at_j);
                 } else {
                     assert(hist_at_ij == 0.0f);
                 }
@@ -804,7 +804,7 @@ void test_bspline_4()
     }
 }
 
-void test_mutual_information_gradient(const Mat& source, const Mat& destination)
+void generate_mi_derivative_space(const Mat& source, const Mat& destination)
 {
     using PixelType      = uint8_t;
     using GradPixelType  = int16_t;
@@ -833,8 +833,8 @@ void test_mutual_information_gradient(const Mat& source, const Mat& destination)
     Mat gradient;
     gradient.create<float>(1, 8, 1);
 
-    for (float alpha = -0.0001f; alpha <= 0.0001f; alpha += 0.00001f) {
-        const int alpha_pos = 7;
+    for (float alpha = -20.f; alpha <= 20.f; alpha += 0.05f) {
+        const int alpha_pos = 2;
         // clang-format off
         std::vector<float> homography {
             1.f, 0.f, 0.f,
@@ -863,8 +863,8 @@ void test_mutual_information_gradient(const Mat& source, const Mat& destination)
             local_source,
             local_mask);
 
-        // visualize_steepest_descent_imgs(steepest_destination);
-        // visualize_steepest_descent_imgs(local_steepest);
+        visualize_steepest_descent_imgs(steepest_destination);
+        visualize_steepest_descent_imgs(local_steepest);
 
         mutual_information_gradient(local_destination,
                                     local_steepest,
@@ -985,7 +985,21 @@ bool register_translation(const Mat& source,
     gaussian_blur<uint8_t, uint8_t, 1>(
         small_homog, 5, 2.f, small_homog_blurred);
 
-    test_mutual_information_gradient(small_homog_blurred, small_homog_blurred);
+    /*
+    small_homog_blurred.for_each<Mat::Iterator<uint8_t>>(
+        [](Mat::Iterator<uint8_t>& it, int y, int x, int c) {
+            int qx = (int)(x < it.m.cols / 2 ? 0 : 255);
+            int qy = (int)(y < it.m.rows / 2 ? 0 : 255);
+            if (x > it.m.cols * 0.25 && x < it.m.cols * 0.75 &&
+                y > it.m.rows * 0.25 && y < it.m.rows * 0.75) {
+                it(y, x, c) = (uint8_t)(qx + qy > 255 ? 0 : qx + qy);
+            }
+        });
+        */
+
+    generate_mi_derivative_space(small_homog_blurred, small_homog_blurred);
+    std::cout << std::endl;
+    generate_mi_space(small_homog_blurred);
 
     /*
     // clang-format off
