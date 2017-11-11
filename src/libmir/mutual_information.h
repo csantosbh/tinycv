@@ -1,6 +1,8 @@
 #ifndef _LIBMIR_MUTUAL_INFORMATION_H_
 #define _LIBMIR_MUTUAL_INFORMATION_H_
 
+#include "mat.h"
+
 /**
  * Mask iterator for the case where we know that all pixels are valid
  *
@@ -24,9 +26,9 @@ double mutual_information_impl(const Mat& image_a,
     using std::vector;
     using BinningMethod = BSpline4;
 
-    vector<float> histogram_a;
-    vector<float> histogram_b;
-    vector<float> histogram_ab;
+    Mat histogram_a;
+    Mat histogram_b;
+    Mat histogram_ab;
     joint_image_histogram<PixelType,
                           BinningMethod,
                           MaskIteratorA,
@@ -38,16 +40,17 @@ double mutual_information_impl(const Mat& image_a,
                                          histogram_b,
                                          histogram_ab);
 
-    const int number_practical_bins = static_cast<int>(histogram_a.size());
+    const int number_practical_bins = static_cast<int>(histogram_a.cols);
 
-    const auto joint_hist_pos = [number_practical_bins](int x, int y) {
-        return y * number_practical_bins + x;
-    };
+    // Histogram iterators
+    Mat::ConstIterator<float> hist_a_it(histogram_a);
+    Mat::ConstIterator<float> hist_b_it(histogram_b);
+    Mat::ConstIterator<float> hist_ab_it(histogram_ab);
 
     double mi_summation = 0.0;
     for (int j = 0; j < number_practical_bins; ++j) {
         for (int i = 0; i < number_practical_bins; ++i) {
-            double prob_ij = histogram_ab[joint_hist_pos(i, j)];
+            double prob_ij = hist_ab_it(i, j, 0);
 
             /*
              * We know that P(a=i,b=j) < P(a=i) and P(a=i,b=j) < P(b=j), since
@@ -78,8 +81,8 @@ double mutual_information_impl(const Mat& image_a,
              * converges to 0.
              */
             if (prob_ij > 0.0) {
-                double prob_ai = histogram_a[i];
-                double prob_bj = histogram_b[j];
+                double prob_ai = hist_a_it(0, i, 0);
+                double prob_bj = hist_b_it(0, j, 0);
 
                 double logterm = std::log(prob_ij / (prob_ai * prob_bj));
                 mi_summation += prob_ij * logterm;

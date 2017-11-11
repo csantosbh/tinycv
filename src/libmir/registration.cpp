@@ -46,7 +46,7 @@ Mat image_crop(const Mat& image, const BoundingBox& crop_bb)
 
 template <typename PixelType>
 using InterpolationFunctor =
-    void (*)(const Mat::ConstIterator<PixelType>& it_img,
+    void (*)(const Mat::ConstIterator<PixelType>& img_it,
              const float* coordinates,
              PixelType* output);
 
@@ -86,9 +86,9 @@ void image_transform(const Mat& image,
     // clang-format on
     homography_inv = homography_inv * transf_bb_pivot;
 
-    Mat::ConstIterator<PixelType> it_img(image);
-    Mat::Iterator<PixelType> it_transf_img(output_image);
-    Mat::Iterator<uint8_t> it_mask(output_mask);
+    Mat::ConstIterator<PixelType> img_it(image);
+    Mat::Iterator<PixelType> transf_img_it(output_image);
+    Mat::Iterator<uint8_t> mask_it(output_mask);
 
     float last_input_col = static_cast<float>(image.cols) - 1.f;
     float last_input_row = static_cast<float>(image.rows) - 1.f;
@@ -107,13 +107,13 @@ void image_transform(const Mat& image,
                 transformed_coord[1] >= 0.f &&
                 transformed_coord[1] <= last_input_row) {
 
-                interpolation_method(it_img,
+                interpolation_method(img_it,
                                      transformed_coord.data(),
-                                     &it_transf_img(y_buff, x_buff, 0));
+                                     &transf_img_it(y_buff, x_buff, 0));
 
-                it_mask(y_buff, x_buff, 0) = 255;
+                mask_it(y_buff, x_buff, 0) = 255;
             } else {
-                it_mask(y_buff, x_buff, 0) = 0;
+                mask_it(y_buff, x_buff, 0) = 0;
             }
         }
     }
@@ -131,6 +131,8 @@ void image_convolve(const Mat& image,
                     const float kernel_norm_factor,
                     Mat& output_image)
 {
+    using IntermediatePixelType = decltype(InputPixelType() * InputPixelType());
+
     assert(kernel_v.cols % 2 == 1);
     assert(kernel_v.rows == 1);
     assert(kernel_h.cols % 2 == 1);
@@ -147,7 +149,7 @@ void image_convolve(const Mat& image,
 
     // Create output image for first pass
     Mat output_vertical_pass;
-    output_vertical_pass.create<OutputPixelType>(
+    output_vertical_pass.create<IntermediatePixelType>(
         image.rows - 2 * border_v, image.cols, channels);
 
     // Create output image for second pass
@@ -159,8 +161,9 @@ void image_convolve(const Mat& image,
     const auto convolve = [](const ConvolutionDirection direction,
                              const Mat::ConstIterator<float>& kernel_it,
                              const float norm_factor,
+                             const bool clamp_output,
                              const auto& input_it,
-                             Mat::Iterator<OutputPixelType>& output_it) {
+                             auto& output_it) {
         for (int y = 0; y < output_it.m.rows; ++y) {
             for (int x = 0; x < output_it.m.cols; ++x) {
                 for (int c = 0; c < output_it.m.channels(); ++c) {
@@ -172,7 +175,8 @@ void image_convolve(const Mat& image,
                                 ? input_it(y + n, x, c)
                                 : input_it(y, x + n, c);
 
-                        conv_sum += kernel_it(0, n, 0) * input_pix;
+                        conv_sum +=
+                            kernel_it(0, n, 0) * static_cast<float>(input_pix);
                     }
 
                     float normalized_pix = conv_sum * norm_factor;
@@ -180,18 +184,27 @@ void image_convolve(const Mat& image,
                         normalized_pix = std::round(normalized_pix);
                     }
 
+                    if (clamp_output) {
+                        if (std::is_same<OutputPixelType, uint8_t>::value) {
+                            normalized_pix =
+                                std::min(255.f, std::max(0.f, normalized_pix));
+                        }
+                    }
+
                     output_it(y, x, c) =
-                        static_cast<OutputPixelType>(normalized_pix);
+                        static_cast<typename std::remove_reference<decltype(
+                            output_it(y, x, c))>::type>(normalized_pix);
                 }
             }
         }
     };
 
     // First pass: Vertical convolution
-    Mat::Iterator<OutputPixelType> first_pass_it(output_vertical_pass);
+    Mat::Iterator<IntermediatePixelType> first_pass_it(output_vertical_pass);
     convolve(ConvolutionDirection::Vertical,
              kernel_v_it,
              1.f,
+             false,
              Mat::ConstIterator<InputPixelType>(image),
              first_pass_it);
 
@@ -200,7 +213,8 @@ void image_convolve(const Mat& image,
     convolve(ConvolutionDirection::Horizontal,
              kernel_h_it,
              kernel_norm_factor,
-             Mat::ConstIterator<OutputPixelType>(output_vertical_pass),
+             true,
+             Mat::ConstIterator<IntermediatePixelType>(output_vertical_pass),
              second_pass_it);
 
     return;
@@ -241,7 +255,39 @@ void derivative_holoborodko_impl(
         image, vertical_kernel, horizontal_kernel, norm_factor, output_image);
 }
 
+template <typename InputPixelType, typename OutputPixelType, int channels>
+void gaussian_blur(const Mat& image,
+                   int kernel_border_size,
+                   float standard_deviation,
+                   Mat& output_image)
+{
+    Mat kernel;
+    kernel.create<float>(1, 2 * kernel_border_size + 1, 1);
+    Mat::Iterator<float> kernel_it(kernel);
+
+    float kernel_summation = 0.f;
+    for (int i = 0; i < kernel.cols; ++i) {
+        float x =
+            static_cast<float>(i - kernel_border_size) / standard_deviation;
+        float current_value = std::exp(-(x * x) * 0.5f);
+        kernel_it(0, i, 0)  = current_value;
+        kernel_summation += current_value;
+    }
+
+    float norm_factor = 1.f / (kernel_summation * kernel_summation);
+    image_convolve<InputPixelType, OutputPixelType, channels>(
+        image, kernel, kernel, norm_factor, output_image);
+
+    return;
+}
+
 enum class FilterOrder { Fifth, Seventh };
+/**
+ * Compute the image derivative along the specified axis.
+ *
+ * Note that the output image borders WILL BE CROPPED by an amount proportional
+ * to the chosen filter order.
+ */
 template <typename InputPixelType, typename OutputPixelType, int channels>
 void derivative_holoborodko(const Mat& image,
                             ImageDerivativeAxis axis,
@@ -258,7 +304,7 @@ void derivative_holoborodko(const Mat& image,
             axis,
             {-1, -2, 0, 2, 1},
             {1, 1, 2, 1, 1},
-            1.f / 24.f,
+            1.f / 32.f,
             output_image);
     } else {
         assert(filter_order == FilterOrder::Seventh);
@@ -268,7 +314,7 @@ void derivative_holoborodko(const Mat& image,
             axis,
             {-1, -4, -5, 0, 5, 4, 1},
             {1, 1, 4, 6, 4, 1, 1},
-            1.f / 200.f,
+            1.f / 512.f,
             output_image);
     }
 }
@@ -451,83 +497,263 @@ void affine_jacobian_origin(const T* coordinate, Mat& output)
     // clang-format on
 }
 
-/**
- * Jacobian of the Homography transform w(coordinate, Dp) evaluated at Dp=0
- */
-template <typename T>
-void homography_jacobian_origin(const T* coordinate, Mat& output)
+template <typename TransformElementType>
+struct HomographyTransform
 {
-    if (output.empty()) {
-        output.create<T>(2, 8, 1);
+    using ElementType                  = TransformElementType;
+    static const int number_parameters = 8;
+
+    /**
+     * Jacobian of the Homography transform w(coordinate, Dp) evaluated at Dp=0
+     */
+    static void
+    homography_jacobian_origin(ElementType x, ElementType y, Mat& output)
+    {
+        assert(!output.empty());
+
+        const ElementType xy = x * y;
+
+        // clang-format off
+        output << std::initializer_list<ElementType>{
+            x, y, static_cast<ElementType>(1.0), 0, 0, 0, -x * x, -xy,
+            0, 0, 0, x, y, static_cast<ElementType>(1.0), -xy, -y * y
+        };
+        // clang-format on
     }
 
-    const T& x = coordinate[0];
-    const T& y = coordinate[1];
+    void homography_hessian_x_origin(ElementType x, ElementType y, Mat& output)
+    {
+        assert(!output.empty());
 
-    const T xy = x * y;
+        const ElementType xx = x * x;
+        const ElementType yy = y * y;
+        const ElementType xy = x * y;
 
-    // clang-format off
-    output << std::initializer_list<T>{
-        x, y, static_cast<T>(1.0), 0, 0, 0, -x * x, -xy,
-        0, 0, 0, x, y, static_cast<T>(1.0), -xy, -y * y
-    };
-    // clang-format on
+        // clang-format off
+        output << std::initializer_list<ElementType>{
+            0,     0,  0, 0, 0, 0,        -xx,        -xy,
+            0,     0,  0, 0, 0, 0,        -xy,        -yy,
+            0,     0,  0, 0, 0, 0,         -x,         -y,
+            0,     0,  0, 0, 0, 0,          0,          0,
+            0,     0,  0, 0, 0, 0,          0,          0,
+            0,     0,  0, 0, 0, 0,          0,          0,
+            -xx, -xy, -x, 0, 0, 0, 2 * xx * x, 2 * xy * x,
+            -xy, -yy, -y, 0, 0, 0, 2 * xx * y, 2 * xy * y,
+        };
+        // clang-format on
+    }
+
+    void homography_hessian_y_origin(ElementType x, ElementType y, Mat& output)
+    {
+        assert(!output.empty());
+
+        const ElementType xx = x * x;
+        const ElementType yy = y * y;
+        const ElementType xy = x * y;
+
+        // clang-format off
+        output << std::initializer_list<ElementType>{
+            0, 0, 0,   0,   0,  0,          0,          0,
+            0, 0, 0,   0,   0,  0,          0,          0,
+            0, 0, 0,   0,   0,  0,          0,          0,
+            0, 0, 0,   0,   0,  0,        -xx,        -xy,
+            0, 0, 0,   0,   0,  0,        -xy,        -yy,
+            0, 0, 0,   0,   0,  0,         -x,         -y,
+            0, 0, 0, -xx, -xy, -x, 2 * xy * x, 2 * yy * x,
+            0, 0, 0, -xy, -yy, -y, 2 * xy * y, 2 * yy * y,
+        };
+        // clang-format on
+    }
+};
+
+template <typename GradPixelType,
+          typename TransformClass,
+          typename SteepestPixelType>
+void generate_steepest_descent_imgs(const Mat& grad_x,
+                                    const Mat& grad_y,
+                                    Mat& steepest_img)
+{
+    using TransformElementType = typename TransformClass::ElementType;
+    const int transform_params = TransformClass::number_parameters;
+
+    assert(grad_x.cols == grad_y.cols);
+    assert(grad_x.rows == grad_y.rows);
+    assert(grad_x.channels() == grad_y.channels());
+
+    if (steepest_img.empty()) {
+        steepest_img.create<SteepestPixelType>(
+            grad_x.rows, grad_x.cols, transform_params);
+    } else {
+        assert(steepest_img.cols == grad_x.cols);
+        assert(steepest_img.rows == grad_x.rows);
+        assert(steepest_img.channels() == transform_params);
+    }
+
+    Mat transform_jacobian;
+    transform_jacobian.create<TransformElementType>(2, transform_params, 1);
+
+    Mat::ConstIterator<GradPixelType> grad_x_it(grad_x);
+    Mat::ConstIterator<GradPixelType> grad_y_it(grad_y);
+    Mat::Iterator<TransformElementType> transform_jacob_it(transform_jacobian);
+    Mat::Iterator<SteepestPixelType> steepest_it(steepest_img);
+
+    for (int y = 0; y < grad_x.rows; ++y) {
+        for (int x = 0; x < grad_x.cols; ++x) {
+            GradPixelType grad_x_pixel = grad_x_it(y, x, 0);
+            GradPixelType grad_y_pixel = grad_y_it(y, x, 0);
+
+            TransformClass::homography_jacobian_origin(
+                static_cast<TransformElementType>(x),
+                static_cast<TransformElementType>(y),
+                transform_jacobian);
+
+            for (int param = 0; param < transform_params; ++param) {
+                steepest_it(y, x, param) =
+                    grad_x_pixel * transform_jacob_it(0, param, 0) +
+                    grad_y_pixel * transform_jacob_it(1, param, 0);
+            }
+        }
+    }
 }
 
-template <typename T>
-void homography_hessian_x_origin(const T* coordinate, Mat& output)
+void mutual_information_gradient(const Mat& reference,
+                                 const Mat& steepest_img,
+                                 const Mat& tracked,
+                                 const Mat& tracked_mask,
+                                 Mat& gradient)
 {
-    if (output.empty()) {
-        output.create<T>(8, 8, 1);
+    using std::vector;
+    using BinningMethod  = BSpline4;
+    using PixelType      = uint8_t;
+    using TransformClass = HomographyTransform<float>;
+    using GradientType   = float;
+
+    assert(reference.rows == tracked.rows);
+    assert(reference.cols == tracked.cols);
+
+    if (gradient.empty()) {
+        gradient.create<GradientType>(1, TransformClass::number_parameters, 1);
+    } else {
+        assert(gradient.rows == 1);
+        assert(gradient.cols == TransformClass::number_parameters);
+        assert(gradient.channels() == 1);
     }
 
-    const T& x = coordinate[0];
-    const T& y = coordinate[1];
+    gradient.fill<GradientType>(0);
 
-    const T xx  = x * x;
-    const T yy  = y * y;
-    const T xy  = x * y;
+    Mat histogram_r;
+    Mat histogram_rt;
+    Mat histogram_rt_grad;
 
-    // clang-format off
-    output << std::initializer_list<T>{
-        0,     0,  0, 0, 0, 0,        -xx,        -xy,
-        0,     0,  0, 0, 0, 0,        -xy,        -yy,
-        0,     0,  0, 0, 0, 0,         -x,         -y,
-        0,     0,  0, 0, 0, 0,          0,          0,
-        0,     0,  0, 0, 0, 0,          0,          0,
-        0,     0,  0, 0, 0, 0,          0,          0,
-        -xx, -xy, -x, 0, 0, 0, 2 * xx * x, 2 * xy * x,
-        -xy, -yy, -y, 0, 0, 0, 2 * xx * y, 2 * xy * y,
-    };
-    // clang-format on
+    joint_hist_gradient<PixelType,
+                        float,
+                        BinningMethod,
+                        PositiveMaskIterator,
+                        Mat::ConstIterator<uint8_t>>(reference,
+                                                     {},
+                                                     steepest_img,
+                                                     tracked,
+                                                     tracked_mask,
+                                                     histogram_r,
+                                                     histogram_rt,
+                                                     histogram_rt_grad);
+
+    const int number_practical_bins = static_cast<int>(histogram_r.cols);
+    const int number_parameters     = histogram_rt_grad.channels();
+
+    Mat::ConstIterator<float> hist_r_it(histogram_r);
+    Mat::ConstIterator<float> hist_rt_it(histogram_rt);
+    Mat::ConstIterator<float> hist_rt_grad_it(histogram_rt_grad);
+
+    Mat::Iterator<float> gradient_it(gradient);
+
+    for (int i = 0; i < number_practical_bins; ++i) {
+        for (int j = 0; j < number_practical_bins; ++j) {
+            for (int param = 0; param < number_parameters; ++param) {
+                float grad_at_ij = hist_rt_grad_it(i, j, param);
+                float hist_at_ij = hist_rt_it(i, j, 0);
+                float hist_at_j  = hist_r_it(0, j, 0);
+
+                if (hist_at_j > 0.f) {
+                    gradient_it(0, param, 0) +=
+                        grad_at_ij * std::log(1.f + hist_at_ij / hist_at_j);
+                } else {
+                    assert(hist_at_ij == 0.0f);
+                }
+            }
+        }
+    }
+
+    return;
 }
 
-template <typename T>
-void homography_hessian_y_origin(const T* coordinate, Mat& output)
+void visualize_steepest_descent_imgs(const Mat& steepest_img)
 {
-    if (output.empty()) {
-        output.create<T>(8, 8, 1);
+    Mat steepest0;
+    Mat steepest1;
+    Mat steepest2;
+    Mat steepest3;
+    Mat steepest4;
+    Mat steepest5;
+    Mat steepest6;
+    Mat steepest7;
+
+    steepest0.create<float>(steepest_img.rows, steepest_img.cols, 1);
+    steepest1.create<float>(steepest_img.rows, steepest_img.cols, 1);
+    steepest2.create<float>(steepest_img.rows, steepest_img.cols, 1);
+    steepest3.create<float>(steepest_img.rows, steepest_img.cols, 1);
+    steepest4.create<float>(steepest_img.rows, steepest_img.cols, 1);
+    steepest5.create<float>(steepest_img.rows, steepest_img.cols, 1);
+    steepest6.create<float>(steepest_img.rows, steepest_img.cols, 1);
+    steepest7.create<float>(steepest_img.rows, steepest_img.cols, 1);
+
+    Mat::Iterator<float> steepest0_it(steepest0);
+    Mat::Iterator<float> steepest1_it(steepest1);
+    Mat::Iterator<float> steepest2_it(steepest2);
+    Mat::Iterator<float> steepest3_it(steepest3);
+    Mat::Iterator<float> steepest4_it(steepest4);
+    Mat::Iterator<float> steepest5_it(steepest5);
+    Mat::Iterator<float> steepest6_it(steepest6);
+    Mat::Iterator<float> steepest7_it(steepest7);
+
+    Mat::ConstIterator<float> steepest_it(steepest_img);
+
+    for (int y = 0; y < steepest0.rows; ++y) {
+        for (int x = 0; x < steepest0.cols; ++x) {
+            steepest0_it(y, x, 0) = steepest_it(y, x, 0);
+            steepest1_it(y, x, 0) = steepest_it(y, x, 1);
+            steepest2_it(y, x, 0) = steepest_it(y, x, 2);
+            steepest3_it(y, x, 0) = steepest_it(y, x, 3);
+            steepest4_it(y, x, 0) = steepest_it(y, x, 4);
+            steepest5_it(y, x, 0) = steepest_it(y, x, 5);
+            steepest6_it(y, x, 0) = steepest_it(y, x, 6);
+            steepest7_it(y, x, 0) = steepest_it(y, x, 7);
+        }
     }
 
-    const T& x = coordinate[0];
-    const T& y = coordinate[1];
+    return;
+}
 
-    const T xx  = x * x;
-    const T yy  = y * y;
-    const T xy  = x * y;
+void test_steepest_descent_imgs(const Mat& source)
+{
+    using GradPixelType = float;
 
-    // clang-format off
-    output << std::initializer_list<T>{
-        0, 0, 0,   0,   0,  0,          0,          0,
-        0, 0, 0,   0,   0,  0,          0,          0,
-        0, 0, 0,   0,   0,  0,          0,          0,
-        0, 0, 0,   0,   0,  0,        -xx,        -xy,
-        0, 0, 0,   0,   0,  0,        -xy,        -yy,
-        0, 0, 0,   0,   0,  0,         -x,         -y,
-        0, 0, 0, -xx, -xy, -x, 2 * xy * x, 2 * yy * x,
-        0, 0, 0, -xy, -yy, -y, 2 * xy * y, 2 * yy * y,
-    };
-    // clang-format on
+    Mat grad_x;
+    Mat grad_y;
+    derivative_holoborodko<uint8_t, GradPixelType, 1>(
+        source, ImageDerivativeAxis::dX, FilterOrder::Fifth, grad_x);
+
+    derivative_holoborodko<uint8_t, GradPixelType, 1>(
+        source, ImageDerivativeAxis::dY, FilterOrder::Fifth, grad_y);
+
+    Mat steepest_img;
+    generate_steepest_descent_imgs<GradPixelType,
+                                   HomographyTransform<float>,
+                                   float>(grad_x, grad_y, steepest_img);
+
+    visualize_steepest_descent_imgs(steepest_img);
+
+    return;
 }
 
 void test_image_derivative(const Mat& source)
@@ -576,6 +802,84 @@ void test_bspline_4()
                          eps
                   << " " << BSpline4::hbf_second_derivative(i) << std::endl;
     }
+}
+
+void test_mutual_information_gradient(const Mat& source, const Mat& destination)
+{
+    using PixelType      = uint8_t;
+    using GradPixelType  = int16_t;
+    using TransformClass = HomographyTransform<float>;
+
+    Mat grad_x;
+    Mat grad_y;
+
+    derivative_holoborodko<PixelType, GradPixelType, 1>(
+        destination, ImageDerivativeAxis::dX, FilterOrder::Fifth, grad_x);
+
+    derivative_holoborodko<PixelType, GradPixelType, 1>(
+        destination, ImageDerivativeAxis::dY, FilterOrder::Fifth, grad_y);
+
+    Mat steepest_destination;
+    generate_steepest_descent_imgs<GradPixelType, TransformClass, float>(
+        grad_x, grad_y, steepest_destination);
+
+    BoundingBox border_bb{{{2, 2}},
+                          {{static_cast<float>(destination.cols - 3),
+                            static_cast<float>(destination.rows - 3)}}};
+
+    Mat cropped_destination = image_crop<PixelType>(destination, border_bb);
+    Mat cropped_source      = image_crop<PixelType>(source, border_bb);
+
+    Mat gradient;
+    gradient.create<float>(1, 8, 1);
+
+    for (float alpha = -0.0001f; alpha <= 0.0001f; alpha += 0.00001f) {
+        const int alpha_pos = 7;
+        // clang-format off
+        std::vector<float> homography {
+            1.f, 0.f, 0.f,
+            0.f, 1.f, 0.f,
+            0.f, 0.f, 1.f
+        };
+        homography[alpha_pos] = alpha;
+        // clang-format on
+
+        BoundingBox destination_bb(cropped_destination);
+        BoundingBox interest_bb = bounding_box_intersect(
+            bounding_box_transform(destination_bb, homography.data()),
+            destination_bb);
+
+        Mat local_destination =
+            image_crop<PixelType>(cropped_destination, interest_bb);
+        Mat local_steepest =
+            image_crop<float>(steepest_destination, interest_bb);
+
+        Mat local_mask;
+        Mat local_source;
+        image_transform<PixelType, 1, bilinear_sample<PixelType, 1>>(
+            cropped_source,
+            homography.data(),
+            interest_bb,
+            local_source,
+            local_mask);
+
+        // visualize_steepest_descent_imgs(steepest_destination);
+        // visualize_steepest_descent_imgs(local_steepest);
+
+        mutual_information_gradient(local_destination,
+                                    local_steepest,
+                                    local_source,
+                                    local_mask,
+                                    gradient);
+
+        Mat::Iterator<float> grad_it(gradient);
+        std::cout << alpha << " " << grad_it(0, alpha_pos, 0) << std::endl;
+
+        int breakpoint = 0;
+        breakpoint++;
+    }
+
+    return;
 }
 
 bool register_translation(const Mat& source,
@@ -657,9 +961,31 @@ bool register_translation(const Mat& source,
 
     // test_image_derivative(source);
 
-    test_bspline_4();
+    // test_bspline_4();
 
-    Mat dh;
+    // test_steepest_descent_imgs(source);
+
+    float scale = 0.4f;
+    std::vector<float> scale_data{
+        scale, 0.f, 0.f, 0.f, scale, 0.f, 0.f, 0.f, 1.f};
+    // clang-format on
+    Eigen::Map<const Matrix3fRowMajor> scale_mat(scale_data.data());
+    Mat small_homog;
+    {
+        Mat tmp_mask;
+        image_transform<uint8_t, 1, bilinear_sample<uint8_t, 1>>(
+            source,
+            scale_mat.data(),
+            bounding_box_transform(BoundingBox(source), scale_mat.data()),
+            small_homog,
+            tmp_mask);
+    }
+
+    Mat small_homog_blurred;
+    gaussian_blur<uint8_t, uint8_t, 1>(
+        small_homog, 5, 2.f, small_homog_blurred);
+
+    test_mutual_information_gradient(small_homog_blurred, small_homog_blurred);
 
     /*
     // clang-format off

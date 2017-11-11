@@ -6,6 +6,15 @@
 
 struct BoundingBox;
 
+// TODO move somewhere else
+// Used to prevent automatic template argument deduction
+template <typename T>
+struct dependent_type
+{
+    using type = T;
+};
+
+
 class Mat
 {
   public:
@@ -64,6 +73,45 @@ class Mat
         return *this;
     }
 
+    template <typename PixelType>
+    Mat& fill(typename dependent_type<PixelType>::type value)
+    {
+        const int num_channels = channels();
+        Iterator<PixelType> dst_it(*this);
+
+        for (int y = 0; y < rows; ++y) {
+            for (int x = 0; x < cols; ++x) {
+                for (int c = 0; c < num_channels; ++c) {
+                    dst_it(y, x, c) = value;
+                }
+            }
+        }
+
+        return *this;
+    }
+
+    template <typename InputType, typename OutputType>
+    Mat convert() const
+    {
+        const int num_channels = channels();
+
+        Mat output;
+        output.create<OutputType>(rows, cols, num_channels);
+
+        ConstIterator<InputType> src_it(*this);
+        Iterator<OutputType> dst_it(output);
+
+        for (int y = 0; y < rows; ++y) {
+            for (int x = 0; x < cols; ++x) {
+                for (int c = 0; c < num_channels; ++c) {
+                    dst_it(y, x, c) = static_cast<OutputType>(src_it(y, x, c));
+                }
+            }
+        }
+
+        return output;
+    }
+
     Type type() const;
 
     bool empty() const;
@@ -97,6 +145,8 @@ class Mat
     template <typename T>
     struct Iterator
     {
+        using PixelType = T;
+
         Iterator(Mat& m_)
             : m(m_)
         {
@@ -112,12 +162,20 @@ class Mat
     template <typename T>
     struct ConstIterator
     {
+        using PixelType = T;
+
         ConstIterator(const Mat& m_)
             : m(m_)
         {
         }
-        ConstIterator(const ConstIterator& cvIt)
-            : m(cvIt.m)
+
+        ConstIterator(const ConstIterator& cv_it)
+            : m(cv_it.m)
+        {
+        }
+
+        ConstIterator(const Iterator<T>& cv_it)
+            : m(cv_it.m)
         {
         }
 
