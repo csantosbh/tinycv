@@ -51,14 +51,14 @@ BoundingBox& BoundingBox::operator=(const BoundingBox& other)
     return *this;
 }
 
-int BoundingBox::flooring_width() const
+int BoundingBox::ceiling_width() const
 {
-    return static_cast<int>(right_bottom[0] - left_top[0]) + 1;
+    return static_cast<int>(std::ceil(right_bottom[0] - left_top[0] + 1.f));
 }
 
-int BoundingBox::flooring_height() const
+int BoundingBox::ceiling_height() const
 {
-    return static_cast<int>(right_bottom[1] - left_top[1]) + 1;
+    return static_cast<int>(std::ceil(right_bottom[1] - left_top[1] + 1.f));
 }
 
 BoundingBox bounding_box_transform(const BoundingBox& bb,

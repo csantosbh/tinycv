@@ -22,21 +22,21 @@ Mat image_crop(const Mat& image, const BoundingBox& crop_bb)
 
     Mat output;
 
-    assert(crop_bb.left_top[0] >= 0.f);
-    assert(crop_bb.left_top[1] >= 0.f);
+    assert(crop_bb.left_top[0] >= -1.f);
+    assert(crop_bb.left_top[1] >= -1.f);
 
     assert(crop_bb.left_top[0] <= crop_bb.right_bottom[0]);
     assert(crop_bb.left_top[1] <= crop_bb.right_bottom[1]);
 
-    assert(crop_bb.left_top[0] <= crop_bb.right_bottom[0]);
-    assert(crop_bb.left_top[1] <= crop_bb.right_bottom[1]);
+    assert(crop_bb.right_bottom[0] <= image.cols);
+    assert(crop_bb.right_bottom[1] <= image.rows);
 
     output.create_from_buffer<PixelType>(
         static_cast<PixelType*>(image.data) +
             static_cast<int>(crop_bb.left_top[1]) * image.row_stride() +
             static_cast<int>(crop_bb.left_top[0]) * image.channels(),
-        crop_bb.flooring_height(),
-        crop_bb.flooring_width(),
+        crop_bb.ceiling_height(),
+        crop_bb.ceiling_width(),
         image.channels(),
         image.row_stride());
     output.data_mgr_ = image.data_mgr_;
@@ -68,8 +68,8 @@ void image_transform(const Mat& image,
     // Compute bounding box of the transformed image by transforming its corners
     Eigen::Map<const Matrix3fRowMajor> homography(homography_ptr);
 
-    int output_width  = output_bb.flooring_width();
-    int output_height = output_bb.flooring_height();
+    int output_width  = output_bb.ceiling_width();
+    int output_height = output_bb.ceiling_height();
 
     output_image.create<PixelType>(output_height, output_width, channels);
     output_mask.create<uint8_t>(output_height, output_width, 1);
@@ -90,8 +90,11 @@ void image_transform(const Mat& image,
     Mat::Iterator<PixelType> transf_img_it(output_image);
     Mat::Iterator<uint8_t> mask_it(output_mask);
 
-    float last_input_col = static_cast<float>(image.cols) - 1.f;
-    float last_input_row = static_cast<float>(image.rows) - 1.f;
+    float in_image_cols_f = static_cast<float>(image.cols);
+    float in_image_rows_f = static_cast<float>(image.rows);
+
+    float last_input_col = in_image_cols_f - 1.f;
+    float last_input_row = in_image_rows_f - 1.f;
 
     for (int y_buff = 0; y_buff < output_image.rows; ++y_buff) {
         for (int x_buff = 0; x_buff < output_image.cols; ++x_buff) {
@@ -112,6 +115,37 @@ void image_transform(const Mat& image,
                                      &transf_img_it(y_buff, x_buff, 0));
 
                 mask_it(y_buff, x_buff, 0) = 255;
+            } else if (transformed_coord[0] > -1.f &&
+                       transformed_coord[0] < in_image_cols_f &&
+                       transformed_coord[1] > -1.f &&
+                       transformed_coord[1] < in_image_rows_f) {
+                ///
+                // Handle image borders by smoothly decreasing the value of the
+                // mask at those regions
+                float clamped_coords[] = {
+                    clamp(transformed_coord[0], 0.f, last_input_col),
+                    clamp(transformed_coord[1], 0.f, last_input_row)};
+                interpolation_method(
+                    img_it, clamped_coords, &transf_img_it(y_buff, x_buff, 0));
+
+                float mask_alpha_x = 1.f;
+                float mask_alpha_y = 1.f;
+
+                if (transformed_coord[0] < 0.f) {
+                    mask_alpha_x = 1.f + transformed_coord[0];
+                } else if (transformed_coord[0] > last_input_col) {
+                    mask_alpha_x = in_image_cols_f - transformed_coord[0];
+                }
+
+                if (transformed_coord[1] < 0.f) {
+                    mask_alpha_y = 1.f + transformed_coord[1];
+                } else if (transformed_coord[1] > last_input_row) {
+                    mask_alpha_y = in_image_rows_f - transformed_coord[1];
+                }
+
+                mask_it(y_buff, x_buff, 0) =
+                    fast_positive_round<float, uint8_t>(255.f * mask_alpha_x *
+                                                        mask_alpha_y);
             } else {
                 mask_it(y_buff, x_buff, 0) = 0;
             }
@@ -321,23 +355,50 @@ void derivative_holoborodko(const Mat& image,
 
 void generate_mi_space(const Mat& source)
 {
-    using PixelType = uint8_t;
+    using PixelType = float;
+
+    Mat source_small;
+
+    ///
+    // Generate the scaled-down destination image
+    const float scale = 1.0f;
+    // clang-format off
+    std::vector<float> scale_data{
+        scale, 0.f, 0.f,
+        0.f, scale, 0.f,
+        0.f, 0.f, 1.f
+    };
+    Eigen::Map<const Matrix3fRowMajor> scale_mat(scale_data.data());
+
+    {
+        Mat tmp_mask;
+
+        image_transform<PixelType, 1, bilinear_sample<PixelType, 1>>(
+            source,
+            scale_data.data(),
+            bounding_box_transform(BoundingBox(source),
+                                   scale_data.data()),
+            source_small,
+            tmp_mask);
+    }
 
     /// Translation
-    const float dt = 20.f;
+    const float dt = 0.0001f;
     for (float y = 0; y <= 0; y += 0.1f) {
-        for (float x = -dt; x <= dt; x += 0.05f) {
+        for (float x = -dt; x <= dt; x += 0.000001f) {
+            const int alpha_pos = 6;
 
             // clang-format off
             std::vector<float> translation_data {
-                1.f, 0.f, x,
-                0.f, 1.f, y,
+                1.f, 0.f, 0.f,
+                0.f, 1.f, 0.f,
                 0.f, 0.f, 1.f
             };
+            translation_data[alpha_pos] = x;
             // clang-format on
             Eigen::Map<const Matrix3fRowMajor> translate(
                 translation_data.data());
-            Matrix3fRowMajor scale_and_translate = translate;
+            Matrix3fRowMajor scale_and_translate = translate * scale_mat;
 
             Mat transformed_mask;
             Mat transformed_img;
@@ -345,8 +406,10 @@ void generate_mi_space(const Mat& source)
             BoundingBox input_bb = BoundingBox(source);
 
             BoundingBox output_bb = bounding_box_intersect(
-                bounding_box_transform(input_bb, translate.data()), input_bb);
-            Mat cropped_img = image_crop<PixelType>(source, output_bb);
+                bounding_box_transform(input_bb, scale_mat.data()),
+                BoundingBox(source_small));
+
+            Mat cropped_img = image_crop<PixelType>(source_small, output_bb);
             image_transform<PixelType, 1, bilinear_sample<PixelType, 1>>(
                 source,
                 scale_and_translate.data(),
@@ -599,7 +662,7 @@ void mutual_information_gradient(const Mat& reference,
 {
     using std::vector;
     using BinningMethod  = BSpline4;
-    using PixelType      = uint8_t;
+    using PixelType      = float;
     using TransformClass = HomographyTransform<float>;
     using GradientType   = float;
 
@@ -652,10 +715,12 @@ void mutual_information_gradient(const Mat& reference,
                 assert(hist_at_ij <= hist_at_j);
 
                 if (hist_at_ij > 0.f) {
+                    assert(hist_at_j > 0.f);
+
                     gradient_it(0, param, 0) +=
                         grad_at_ij * std::log(hist_at_ij / hist_at_j);
                 } else {
-                    assert(hist_at_ij == 0.0f);
+                    assert(hist_at_ij == 0.f);
                 }
             }
         }
@@ -783,51 +848,103 @@ void test_bspline_4()
 
 void generate_mi_derivative_space(const Mat& source, const Mat& destination)
 {
-    using PixelType      = uint8_t;
-    using GradPixelType  = int16_t;
+    using PixelType      = float;
+    using GradPixelType  = float;
     using TransformClass = HomographyTransform<float>;
 
+    // Generate image derivatives
     Mat grad_x;
     Mat grad_y;
 
+    const int gradient_border = 2;
     derivative_holoborodko<PixelType, GradPixelType, 1>(
         destination, ImageDerivativeAxis::dX, FilterOrder::Fifth, grad_x);
 
     derivative_holoborodko<PixelType, GradPixelType, 1>(
         destination, ImageDerivativeAxis::dY, FilterOrder::Fifth, grad_y);
 
-    Mat steepest_destination;
-    generate_steepest_descent_imgs<GradPixelType, TransformClass, float>(
-        grad_x, grad_y, steepest_destination);
-
-    BoundingBox border_bb{{{2, 2}},
-                          {{static_cast<float>(destination.cols - 3),
-                            static_cast<float>(destination.rows - 3)}}};
+    // Crop image borders to match their sizes with the derivative
+    BoundingBox border_bb{
+        {{gradient_border, gradient_border}},
+        {{static_cast<float>(destination.cols - gradient_border - 1),
+          static_cast<float>(destination.rows - gradient_border - 1)}}};
 
     Mat cropped_destination = image_crop<PixelType>(destination, border_bb);
     Mat cropped_source      = image_crop<PixelType>(source, border_bb);
 
-    Mat gradient;
-    gradient.create<float>(1, 8, 1);
+    ///
+    // Generate the scaled-down destination image and its gradients at origin
+    const float scale = 1.0f;
+    // clang-format off
+    std::vector<float> scale_data{
+        scale, 0.f, 0.f,
+        0.f, scale, 0.f,
+        0.f, 0.f, 1.f
+    };
+    // clang-format on
+    Eigen::Map<const Matrix3fRowMajor> scale_mat(scale_data.data());
 
-    for (float alpha = -20.f; alpha <= 20.f; alpha += 0.05f) {
-        const int alpha_pos = 2;
+    Mat destination_small;
+    Mat grad_x_small;
+    Mat grad_y_small;
+    {
+        Mat tmp_mask;
+
+        // Scale destination
+        image_transform<PixelType, 1, bilinear_sample<PixelType, 1>>(
+            cropped_destination,
+            scale_data.data(),
+            bounding_box_transform(BoundingBox(cropped_destination),
+                                   scale_data.data()),
+            destination_small,
+            tmp_mask);
+
+        // Scale gradient
+        image_transform<GradPixelType, 1, bilinear_sample<GradPixelType, 1>>(
+            grad_x,
+            scale_data.data(),
+            bounding_box_transform(BoundingBox(grad_x), scale_data.data()),
+            grad_x_small,
+            tmp_mask);
+        image_transform<GradPixelType, 1, bilinear_sample<GradPixelType, 1>>(
+            grad_y,
+            scale_data.data(),
+            bounding_box_transform(BoundingBox(grad_y), scale_data.data()),
+            grad_y_small,
+            tmp_mask);
+    }
+
+    // Generate steepest descent image
+    Mat steepest_destination;
+    generate_steepest_descent_imgs<GradPixelType, TransformClass, float>(
+        grad_x_small, grad_y_small, steepest_destination);
+
+    Mat gradient;
+    gradient.create<float>(1, TransformClass::number_parameters, 1);
+
+    const float dt = 0.0001f;
+    for (float alpha = dt; alpha <= dt; alpha += 0.000001f) {
+        const int alpha_pos = 6;
         // clang-format off
-        std::vector<float> homography {
+        std::vector<float> interest_transform {
             1.f, 0.f, 0.f,
             0.f, 1.f, 0.f,
             0.f, 0.f, 1.f
         };
-        homography[alpha_pos] = alpha;
+        interest_transform[alpha_pos] = alpha;
         // clang-format on
+        Eigen::Map<const Matrix3fRowMajor> interest_transform_mat(
+            interest_transform.data());
+
+        Matrix3fRowMajor homography = interest_transform_mat * scale_mat;
 
         BoundingBox destination_bb(cropped_destination);
         BoundingBox interest_bb = bounding_box_intersect(
             bounding_box_transform(destination_bb, homography.data()),
-            destination_bb);
+            BoundingBox(destination_small));
 
         Mat local_destination =
-            image_crop<PixelType>(cropped_destination, interest_bb);
+            image_crop<PixelType>(destination_small, interest_bb);
         Mat local_steepest =
             image_crop<float>(steepest_destination, interest_bb);
 
@@ -840,8 +957,8 @@ void generate_mi_derivative_space(const Mat& source, const Mat& destination)
             local_source,
             local_mask);
 
-        //visualize_steepest_descent_imgs(steepest_destination);
-        visualize_steepest_descent_imgs(local_steepest);
+        // visualize_steepest_descent_imgs(steepest_destination);
+        // visualize_steepest_descent_imgs(local_steepest);
 
         mutual_information_gradient(local_destination,
                                     local_steepest,
@@ -857,6 +974,31 @@ void generate_mi_derivative_space(const Mat& source, const Mat& destination)
     }
 
     return;
+}
+
+template <typename InputPixelType, typename OutputPixelType>
+Mat image_normalize(const Mat& input_img)
+{
+    Mat output_img;
+    output_img.create<OutputPixelType>(
+        input_img.rows, input_img.cols, input_img.channels());
+
+    // TODO refactor out of this place since I need this during the gradient
+    // creation
+    const InputPixelType color_max = static_cast<InputPixelType>(255);
+    const float a_bin_map = static_cast<float>(NUM_HISTOGRAM_CENTRAL_BINS) /
+                            static_cast<float>(color_max);
+    const float b_bin_map = -0.5;
+
+    Mat::ConstIterator<InputPixelType> input_it(input_img);
+    output_img.for_each<Mat::Iterator<OutputPixelType>>(
+        [&input_it, a_bin_map, b_bin_map](
+            Mat::Iterator<OutputPixelType>& output_it, int y, int x, int c) {
+            output_it(y, x, c) = static_cast<OutputPixelType>(
+                a_bin_map * input_it(y, x, c) + b_bin_map);
+        });
+
+    return output_img;
 }
 
 bool register_translation(const Mat& source,
@@ -942,9 +1084,13 @@ bool register_translation(const Mat& source,
 
     // test_steepest_descent_imgs(source);
 
-    float scale = 0.4f;
+    const float scale = 0.4f;
+    // clang-format off
     std::vector<float> scale_data{
-        scale, 0.f, 0.f, 0.f, scale, 0.f, 0.f, 0.f, 1.f};
+        scale, 0.f, 0.f,
+        0.f, scale, 0.f,
+        0.f, 0.f, 1.f
+    };
     // clang-format on
     Eigen::Map<const Matrix3fRowMajor> scale_mat(scale_data.data());
     Mat small_homog;
@@ -958,9 +1104,9 @@ bool register_translation(const Mat& source,
             tmp_mask);
     }
 
-    Mat small_homog_blurred;
-    gaussian_blur<uint8_t, uint8_t, 1>(
-        small_homog, 5, 2.f, small_homog_blurred);
+    Mat source_blurred;
+    //gaussian_blur<uint8_t, uint8_t, 1>(source, 5, 2.f, source_blurred);
+    gaussian_blur<uint8_t, uint8_t, 1>(small_homog, 5, 2.f, source_blurred);
 
     /*
     small_homog_blurred.for_each<Mat::Iterator<uint8_t>>(
@@ -973,10 +1119,12 @@ bool register_translation(const Mat& source,
             }
         });
         */
+    // Preprocess image
+    Mat blurred_normalized = image_normalize<uint8_t, float>(source_blurred);
 
-    generate_mi_derivative_space(small_homog_blurred, small_homog_blurred);
+    generate_mi_derivative_space(blurred_normalized, blurred_normalized);
     std::cout << std::endl;
-    generate_mi_space(small_homog_blurred);
+    generate_mi_space(blurred_normalized);
 
     /*
     // clang-format off

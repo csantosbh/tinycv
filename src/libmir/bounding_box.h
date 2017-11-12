@@ -21,9 +21,9 @@ struct BoundingBox
 
     BoundingBox& operator=(BoundingBox&& other);
 
-    int flooring_width() const;
+    int ceiling_width() const;
 
-    int flooring_height() const;
+    int ceiling_height() const;
 
     std::array<float, 2> left_top;
     std::array<float, 2> right_bottom;

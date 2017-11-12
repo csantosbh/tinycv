@@ -4,6 +4,8 @@
 #include "histogram.h"
 #include "mat.h"
 
+using MaskType = uint8_t;
+
 /**
  * Mask iterator for the case where we know that all pixels are valid
  *
@@ -117,11 +119,11 @@ double mutual_information(const Mat& image_a, const Mat& image_b)
 template <typename PixelType>
 double mutual_information(const Mat& image_a,
                           const Mat& image_b,
-                          const Mat::ConstIterator<PixelType>& it_mask_b)
+                          const Mat::ConstIterator<MaskType>& it_mask_b)
 {
     return mutual_information_impl<PixelType,
                                    PositiveMaskIterator,
-                                   Mat::ConstIterator<PixelType>>(
+                                   Mat::ConstIterator<MaskType>>(
         image_a, {}, image_b, it_mask_b);
 }
 
@@ -140,8 +142,8 @@ double mutual_information(const Mat& image_a,
                           const Mat::ConstIterator<PixelType>& it_mask_b)
 {
     return mutual_information_impl<PixelType,
-                                   Mat::ConstIterator<PixelType>,
-                                   Mat::ConstIterator<PixelType>>(
+                                   Mat::ConstIterator<MaskType>,
+                                   Mat::ConstIterator<MaskType>>(
         image_a, it_mask_a, image_b, it_mask_b);
 }
 
