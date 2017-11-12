@@ -452,6 +452,7 @@ void joint_hist_gradient(const Mat& reference,
     histogram_rt_grad.fill<float>(0.f);
 
     // Compute coefficients of linear bin mapping function
+    // TODO refactor out of this place since I need this during the gradient creation
     const PixelType color_max = static_cast<PixelType>(255);
     const int bin_width =
         (static_cast<int>(color_max) + 1) / NUM_HISTOGRAM_CENTRAL_BINS;
@@ -506,6 +507,8 @@ void joint_hist_gradient(const Mat& reference,
             }
         };
 
+    void visualize_steepest_descent_imgs(const Mat& steepest_img);
+    visualize_steepest_descent_imgs(steepest_ref_img);
     for (int y = 0; y < reference.rows; ++y) {
         for (int x = 0; x < reference.cols; ++x) {
             int lower_bin_r;

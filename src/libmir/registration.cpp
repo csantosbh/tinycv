@@ -323,31 +323,6 @@ void generate_mi_space(const Mat& source)
 {
     using PixelType = uint8_t;
 
-    Mat src_sat;
-    const float scale = 0.3f;
-    generate_sat<1>(source, src_sat);
-    Mat small;
-    scale_from_sat<PixelType, 1>(src_sat, scale, small);
-
-    // clang-format off
-    std::vector<float> scale_data {
-        scale, 0.f, 0.f,
-        0.f, scale, 0.f,
-        0.f, 0.f, 1.f
-    };
-    // clang-format on
-    Eigen::Map<const Matrix3fRowMajor> scale_mat(scale_data.data());
-    Mat small_homog;
-    {
-        Mat tmp_mask;
-        image_transform<PixelType, 1, bilinear_sample<PixelType, 1>>(
-            source,
-            scale_mat.data(),
-            bounding_box_transform(BoundingBox(source), scale_mat.data()),
-            small_homog,
-            tmp_mask);
-    }
-
     /// Translation
     const float dt = 20.f;
     for (float y = 0; y <= 0; y += 0.1f) {
@@ -362,16 +337,16 @@ void generate_mi_space(const Mat& source)
             // clang-format on
             Eigen::Map<const Matrix3fRowMajor> translate(
                 translation_data.data());
-            Matrix3fRowMajor scale_and_translate = translate * scale_mat;
+            Matrix3fRowMajor scale_and_translate = translate;
 
             Mat transformed_mask;
             Mat transformed_img;
 
-            BoundingBox input_bb = BoundingBox(small_homog);
+            BoundingBox input_bb = BoundingBox(source);
 
             BoundingBox output_bb = bounding_box_intersect(
                 bounding_box_transform(input_bb, translate.data()), input_bb);
-            Mat cropped_img = image_crop<PixelType>(small_homog, output_bb);
+            Mat cropped_img = image_crop<PixelType>(source, output_bb);
             image_transform<PixelType, 1, bilinear_sample<PixelType, 1>>(
                 source,
                 scale_and_translate.data(),
@@ -674,6 +649,8 @@ void mutual_information_gradient(const Mat& reference,
                 float hist_at_ij = hist_rt_it(i, j, 0);
                 float hist_at_j  = hist_r_it(0, j, 0);
 
+                assert(hist_at_ij <= hist_at_j);
+
                 if (hist_at_ij > 0.f) {
                     gradient_it(0, param, 0) +=
                         grad_at_ij * std::log(hist_at_ij / hist_at_j);
@@ -863,7 +840,7 @@ void generate_mi_derivative_space(const Mat& source, const Mat& destination)
             local_source,
             local_mask);
 
-        visualize_steepest_descent_imgs(steepest_destination);
+        //visualize_steepest_descent_imgs(steepest_destination);
         visualize_steepest_descent_imgs(local_steepest);
 
         mutual_information_gradient(local_destination,

@@ -17,9 +17,12 @@ plot(Y(:, 1), Y(:, 2), 'color', [0 0 0]);
 plot(x, mi, 'b');
 plot(x, dmi, 'r');
 
-dx = x(2)-x(1);
-numerical_dmi = (mi(2:end)-mi(1:(end-1)))./dx;
-plot(x(2:end), numerical_dmi, 'g');
+dx = 2 * (x(2)-x(1));
+x_dif = x(2:(end-1));
+numerical_dmi = (mi(3:end)-mi(1:(end-2)))./dx;
+plot(x_dif, numerical_dmi, 'g');
+
+plot(x, cumsum(dmi * dx) * 0.02, 'color', [ .8 .7  0.2]);
 
 figure;
-plot(x(2:end), dmi(2:end) ./ numerical_dmi', 'color', [255 219 15]/255);
+plot(x_dif, dmi(2:(end-1)) ./ numerical_dmi', 'color', [255 219 15]/255);
