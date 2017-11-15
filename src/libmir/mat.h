@@ -163,6 +163,12 @@ class Mat
         }
     }
 
+    bool is_mask_of(const Mat& image) const
+    {
+        return rows == image.rows && cols == image.cols &&
+               type() == Type::UINT8;
+    }
+
     template <typename T>
     struct Iterator
     {
@@ -221,6 +227,11 @@ class Mat
 
             return (static_cast<T*>(
                 m.data))[row * m.step.buf[0] + col * m.step.buf[1] + chan];
+        }
+
+        bool is_mask_of(const Mat& image) const
+        {
+            return m.is_mask_of(image);
         }
 
         const Mat& m;

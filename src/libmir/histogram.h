@@ -1,6 +1,8 @@
 #ifndef _LIBMIR_HISTOGRAM_H_
 #define _LIBMIR_HISTOGRAM_H_
 
+#include <cmath>
+
 #include "mat.h"
 
 static const int NUM_HISTOGRAM_CENTRAL_BINS = 8;
@@ -138,6 +140,35 @@ class BSpline4
     }
 };
 
+/**
+ * Creates an image by mapping the ranges [0, 255] to [-0.5,
+ * NUM_HISTOGRAM_CENTRAL_BINS-0.5]. When the output image has a floating point
+ * type, this is equivalent to normalizing the image.
+ */
+template <typename InputPixelType, typename OutputPixelType>
+Mat image_scale_histogram(const Mat& input_img)
+{
+    Mat output_img;
+    output_img.create<OutputPixelType>(
+        input_img.rows, input_img.cols, input_img.channels());
+
+    // Compute coefficients of linear bin mapping function
+    const InputPixelType color_max = static_cast<InputPixelType>(255);
+    const float a_bin_map = static_cast<float>(NUM_HISTOGRAM_CENTRAL_BINS) /
+                            static_cast<float>(color_max);
+    const float b_bin_map = -0.5;
+
+    Mat::ConstIterator<InputPixelType> input_it(input_img);
+    output_img.for_each<Mat::Iterator<OutputPixelType>>(
+        [&input_it, a_bin_map, b_bin_map](
+            Mat::Iterator<OutputPixelType>& output_it, int y, int x, int c) {
+            output_it(y, x, c) = static_cast<OutputPixelType>(
+                a_bin_map * input_it(y, x, c) + b_bin_map);
+        });
+
+    return output_img;
+}
+
 double sum_histogram(const Mat::ConstIterator<float>& histogram)
 {
     double histogram_summation = 0.0;
@@ -189,7 +220,6 @@ void normalize_histogram(double histogram_summation,
  *
  * In the example above, a = 8 / 255.
  */
-
 template <typename PixelType,
           typename BinningMethod,
           typename MaskIteratorA,
@@ -209,6 +239,10 @@ void joint_image_histogram(const Mat& image_a,
     // The input images must have the same dimensions
     assert(image_a.rows == image_b.rows);
     assert(image_a.cols == image_b.cols);
+
+    // The input masks must have been correctly initialized
+    assert(mask_a_it.is_mask_of(image_a));
+    assert(mask_b_it.is_mask_of(image_b));
 
     // Create iterators for input images
     Mat::ConstIterator<PixelType> img_a_it(image_a);
@@ -256,17 +290,6 @@ void joint_image_histogram(const Mat& image_a,
     histogram_a.fill<float>(0.f);
     histogram_b.fill<float>(0.f);
     histogram_ab.fill<float>(0.f);
-
-    // Compute coefficients of linear bin mapping function
-    // TODO refactor
-    /*
-    const PixelType color_max = static_cast<PixelType>(255);
-    const int bin_width =
-        (static_cast<int>(color_max) + 1) / NUM_HISTOGRAM_CENTRAL_BINS;
-    const float a_bin_map = static_cast<float>(NUM_HISTOGRAM_CENTRAL_BINS) /
-                            static_cast<float>(color_max);
-    const float b_bin_map = -0.5;
-    */
 
     // Store how much each pixel contribute to all histogram bins that are
     // influenced by its value
@@ -419,6 +442,10 @@ void joint_hist_gradient(const Mat& reference,
     assert(reference.rows == steepest_ref_img.rows);
     assert(reference.cols == steepest_ref_img.cols);
 
+    // The input masks must have been correctly initialized
+    assert(mask_reference_it.is_mask_of(reference));
+    assert(mask_tracked_it.is_mask_of(tracked));
+
     // Create iterators for input images
     Mat::ConstIterator<PixelType> img_r_it(reference);
     Mat::ConstIterator<PixelType> img_t_it(tracked);
@@ -470,18 +497,6 @@ void joint_hist_gradient(const Mat& reference,
     histogram_r.fill<float>(0.f);
     histogram_rt.fill<float>(0.f);
     histogram_rt_grad.fill<float>(0.f);
-
-    // Compute coefficients of linear bin mapping function
-    // TODO refactor out of this place since I need this during the gradient
-    // creation
-    /*
-    const PixelType color_max = static_cast<PixelType>(255);
-    const int bin_width =
-        (static_cast<int>(color_max) + 1) / NUM_HISTOGRAM_CENTRAL_BINS;
-    const float a_bin_map = static_cast<float>(NUM_HISTOGRAM_CENTRAL_BINS) /
-                            static_cast<float>(color_max);
-    const float b_bin_map = -0.5;
-    */
 
     // Storage for how much each pixel contribute to all histogram bins that are
     // influenced by its value
@@ -640,6 +655,23 @@ void joint_hist_gradient(const Mat& reference,
     normalize_histogram(hist_rt_sum, hist_rt_grad_it);
 
     return;
+}
+
+template <typename PixelType,
+          typename SteepestType,
+          typename BinningMethod,
+          typename MaskIteratorA,
+          typename MaskIteratorB>
+void joint_hist_hessian(const Mat& reference,
+                         const MaskIteratorA& mask_reference_it,
+                         const Mat& steepest_ref_img,
+                         const Mat& tracked,
+                         const MaskIteratorB& mask_tracked_it,
+                         Mat& histogram_r,
+                         Mat& histogram_rt,
+                         Mat& histogram_rt_grad)
+{
+
 }
 
 #endif

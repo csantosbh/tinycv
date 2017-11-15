@@ -1,6 +1,8 @@
 #ifndef _LIBMIR_MUTUAL_INFORMATION_H_
 #define _LIBMIR_MUTUAL_INFORMATION_H_
 
+#include <vector>
+
 #include "histogram.h"
 #include "mat.h"
 
@@ -18,6 +20,11 @@ struct PositiveMaskIterator
     {
         return 255;
     }
+
+    bool is_mask_of(const Mat&) const
+    {
+        return true;
+    }
 };
 
 template <typename PixelType, typename MaskIteratorA, typename MaskIteratorB>
@@ -28,6 +35,15 @@ double mutual_information_impl(const Mat& image_a,
 {
     using std::vector;
     using BinningMethod = BSpline4;
+
+    assert(image_a.rows == image_b.rows);
+    assert(image_a.cols == image_b.cols);
+
+    assert(image_a.type() == image_b.type());
+
+    assert(it_mask_a.is_mask_of(image_a));
+    assert(it_mask_b.is_mask_of(image_b));
+
 
     Mat histogram_a;
     Mat histogram_b;
@@ -145,6 +161,85 @@ double mutual_information(const Mat& image_a,
                                    Mat::ConstIterator<MaskType>,
                                    Mat::ConstIterator<MaskType>>(
         image_a, it_mask_a, image_b, it_mask_b);
+}
+
+template <typename TransformClass>
+void mutual_information_gradient(const Mat& reference,
+                                 const Mat& steepest_img,
+                                 const Mat& tracked,
+                                 const Mat& tracked_mask,
+                                 Mat& gradient)
+{
+    using std::vector;
+    using BinningMethod = BSpline4;
+    using PixelType     = float;
+    using GradientType  = float;
+
+    assert(reference.rows == tracked.rows);
+    assert(reference.cols == tracked.cols);
+
+    assert(reference.type() == tracked.type());
+
+    assert(tracked_mask.is_mask_of(tracked));
+
+    if (gradient.empty()) {
+        gradient.create<GradientType>(1, TransformClass::number_parameters, 1);
+    } else {
+        assert(gradient.rows == 1);
+        assert(gradient.cols == TransformClass::number_parameters);
+        assert(gradient.channels() == 1);
+    }
+
+    gradient.fill<GradientType>(0);
+
+    Mat histogram_r;
+    Mat histogram_rt;
+    Mat histogram_rt_grad;
+
+    joint_hist_gradient<PixelType,
+                        float,
+                        BinningMethod,
+                        PositiveMaskIterator,
+                        Mat::ConstIterator<uint8_t>>(reference,
+                                                     {},
+                                                     steepest_img,
+                                                     tracked,
+                                                     tracked_mask,
+                                                     histogram_r,
+                                                     histogram_rt,
+                                                     histogram_rt_grad);
+
+    const int number_practical_bins = static_cast<int>(histogram_r.cols);
+    const int number_parameters     = histogram_rt_grad.channels();
+
+    Mat::ConstIterator<float> hist_r_it(histogram_r);
+    Mat::ConstIterator<float> hist_rt_it(histogram_rt);
+    Mat::ConstIterator<float> hist_rt_grad_it(histogram_rt_grad);
+
+    Mat::Iterator<float> gradient_it(gradient);
+
+    for (int i = 0; i < number_practical_bins; ++i) {
+        for (int j = 0; j < number_practical_bins; ++j) {
+            for (int param = 0; param < number_parameters; ++param) {
+                float grad_at_ij = hist_rt_grad_it(i, j, param);
+                float hist_at_ij = hist_rt_it(i, j, 0);
+                float hist_at_j  = hist_r_it(0, j, 0);
+
+                assert(hist_at_ij <= hist_at_j);
+
+                if (hist_at_ij > 0.f) {
+                    assert(hist_at_j > 0.f);
+
+                    gradient_it(0, param, 0) +=
+                        grad_at_ij * std::log(hist_at_ij / hist_at_j);
+                } else {
+                    assert(hist_at_ij == 0.f);
+                }
+            }
+        }
+    }
+
+    return;
 }
 
 #endif
