@@ -252,6 +252,26 @@ void derivative_holoborodko_impl(
 
     image_convolve<InputPixelType, OutputPixelType, channels>(
         image, vertical_kernel, horizontal_kernel, norm_factor, output_image);
+
+    if(axis==ImageDerivativeAxis::dX) {
+        Mat::ConstIterator<InputPixelType> inp_it(image);
+        output_image.for_each<Mat::Iterator<OutputPixelType>>(
+         [&inp_it]
+         (Mat::Iterator<OutputPixelType>& it, int y, int x, int c) {
+            int xNext = 2+x+1;
+            int xPrev = 2+x-1;
+            it(y, x, c) = (OutputPixelType)(inp_it(y, xNext, c) - inp_it(y, xPrev, c))/(OutputPixelType)2;
+        });
+    } else {
+        Mat::ConstIterator<InputPixelType> inp_it(image);
+        output_image.for_each<Mat::Iterator<OutputPixelType>>(
+         [&inp_it]
+         (Mat::Iterator<OutputPixelType>& it, int y, int x, int c) {
+            int yNext = 2+y+1;
+            int yPrev = 2+y-1;
+            it(y, x, c) = (OutputPixelType)(inp_it(yNext, x, c) - inp_it(yPrev, x, c))/(OutputPixelType)2;
+        });
+    }
 }
 
 template <typename InputPixelType, typename OutputPixelType, int channels>
@@ -361,9 +381,13 @@ struct HomographyTransform
         // clang-format on
     }
 
-    void hessian_x_origin(ElementType x, ElementType y, Mat& output)
+    static void hessian_x_origin(ElementType x, ElementType y, Mat& output)
     {
         assert(!output.empty());
+
+        assert(output.cols == number_parameters);
+        assert(output.rows == number_parameters);
+        assert(output.channels() == 1);
 
         const ElementType xx = x * x;
         const ElementType yy = y * y;
@@ -383,7 +407,7 @@ struct HomographyTransform
         // clang-format on
     }
 
-    void hessian_y_origin(ElementType x, ElementType y, Mat& output)
+    static void hessian_y_origin(ElementType x, ElementType y, Mat& output)
     {
         assert(!output.empty());
 

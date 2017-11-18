@@ -25,13 +25,9 @@ plot(x_dif, numerical_dmi, 'g');
 
 % Integrals
 plot(x, mi(1) + cumtrapz(dmi * dx * 0.5), 'color', [ .8 .7  0.2]);
-%plot(x_dif, mi(1) + cumtrapz(numerical_dmi * dx * 0.5), 'color', [ .8 .7  0.2]);
-
-% Numeric derivative of gradient
-figure;
-numerical_d2mi = (dmi(3:end)-dmi(1:(end-2)))./dx;
-plot(x_dif, numerical_d2mi, 'color', [ .8 .7  0.2]);
 
 % Show difference between numerical and analytical gradients
-%figure;
-%plot(x_dif, dmi(2:(end-1)) ./ numerical_dmi', 'color', [255 219 15]/255);
+%{
+figure;
+plot(x_dif, dmi(2:(end-1)) ./ numerical_dmi', 'color', [255 219 15]/255);
+%}

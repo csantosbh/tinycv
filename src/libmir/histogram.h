@@ -3,6 +3,8 @@
 
 #include <cmath>
 
+#include <Eigen/Eigen>
+
 #include "mat.h"
 
 static const int NUM_HISTOGRAM_CENTRAL_BINS = 8;
@@ -416,6 +418,55 @@ void joint_image_histogram(const Mat& image_a,
     return;
 }
 
+template <typename BinningMethod>
+using WeightArray = std::array<float, 2 * BinningMethod::INFLUENCE_MARGIN + 1>;
+
+/**
+ * Helper function for computing which histogram bins are affected by a pixel,
+ * and how much
+ */
+template <typename PixelType, typename BinningMethod>
+void computeBinContributionRange(int y,
+                                 int x,
+                                 const Mat::ConstIterator<PixelType>& img_it,
+                                 float& pixel_bin,
+                                 int& lower_bin,
+                                 int& upper_bin,
+                                 WeightArray<BinningMethod>& bin_weights)
+{
+    const PixelType& pixel_val = img_it(y, x, 0);
+
+    // Compute pixel bin coordinate
+    int pixel_bin_rounded = static_cast<int>(pixel_val + 0.5);
+    pixel_bin             = pixel_val + BinningMethod::INFLUENCE_MARGIN;
+
+    assert(std::abs(static_cast<float>(pixel_bin_rounded) - pixel_val) <= 0.5f);
+
+    // Compute bin index range for the weight vector
+    lower_bin = pixel_bin_rounded;
+    upper_bin = pixel_bin_rounded + 2 * BinningMethod::INFLUENCE_MARGIN;
+
+    // TODO the pixel val can go up to 7.5 (when pix=255). I have to deal with it.
+    assert(0 <= lower_bin);
+    assert(lower_bin <= upper_bin);
+    assert(upper_bin <= NUM_HISTOGRAM_CENTRAL_BINS +
+                            2 * BinningMethod::INFLUENCE_MARGIN - 1);
+
+    // Update weight storage for given pixel
+    int bin_weights_idx = 0;
+    for (int neighbor = lower_bin; neighbor <= upper_bin; ++neighbor) {
+        const float distance_to_neighbor =
+            static_cast<float>(neighbor) - pixel_bin;
+
+        assert(std::abs(distance_to_neighbor) <
+               (BinningMethod::INFLUENCE_MARGIN + 1));
+
+        bin_weights[bin_weights_idx] =
+            BinningMethod::histogram_bin_function(distance_to_neighbor);
+        bin_weights_idx++;
+    }
+}
+
 template <typename PixelType,
           typename SteepestType,
           typename BinningMethod,
@@ -426,6 +477,8 @@ void joint_hist_gradient(const Mat& reference,
                          const Mat& steepest_ref_img,
                          const Mat& tracked,
                          const MaskIteratorB& mask_tracked_it,
+                         double& histogram_r_sum,
+                         double& histogram_rt_sum,
                          Mat& histogram_r,
                          Mat& histogram_rt,
                          Mat& histogram_rt_grad)
@@ -451,13 +504,10 @@ void joint_hist_gradient(const Mat& reference,
     Mat::ConstIterator<PixelType> img_t_it(tracked);
     Mat::ConstIterator<SteepestType> steepest_it(steepest_ref_img);
 
-    // Create histogram iterators
-    Mat::Iterator<float> hist_r_it(histogram_r);
-    Mat::Iterator<float> hist_rt_it(histogram_rt);
-    Mat::Iterator<float> hist_rt_grad_it(histogram_rt_grad);
-
     ///
     // Allocate and initialize histograms
+    // TODO receive TransformClass instead; will also be able to run some
+    // asserts
     const int hist_length =
         NUM_HISTOGRAM_CENTRAL_BINS + 2 * BinningMethod::INFLUENCE_MARGIN;
     const int model_num_params = steepest_ref_img.channels();
@@ -493,6 +543,11 @@ void joint_hist_gradient(const Mat& reference,
         assert(histogram_rt_grad.channels() == model_num_params);
     }
 
+    // Create histogram iterators
+    Mat::Iterator<float> hist_r_it(histogram_r);
+    Mat::Iterator<float> hist_rt_it(histogram_rt);
+    Mat::Iterator<float> hist_rt_grad_it(histogram_rt_grad);
+
     // Initialize histograms
     histogram_r.fill<float>(0.f);
     histogram_rt.fill<float>(0.f);
@@ -500,55 +555,9 @@ void joint_hist_gradient(const Mat& reference,
 
     // Storage for how much each pixel contribute to all histogram bins that are
     // influenced by its value
-    using WeightArray =
-        std::array<float, 2 * BinningMethod::INFLUENCE_MARGIN + 1>;
-    WeightArray bin_weights_r{};
-    WeightArray bin_weights_r_derivative{};
-    WeightArray bin_weights_t{};
-
-    // Helper function for computing which histogram bins are affected by a
-    // pixel, and how much
-    const auto computeBinContributionRange =
-        [](int y,
-           int x,
-           const Mat::ConstIterator<PixelType>& img_it,
-           float& pixel_bin,
-           int& lower_bin,
-           int& upper_bin,
-           WeightArray& bin_weights) {
-            const PixelType& pixel_val = img_it(y, x, 0);
-
-            // TODO move to binning module
-            // Compute pixel bin coordinate
-            int pixel_bin_rounded = static_cast<int>(pixel_val + 0.5);
-            pixel_bin             = pixel_val + BinningMethod::INFLUENCE_MARGIN;
-
-            assert(std::abs(static_cast<float>(pixel_bin_rounded) -
-                            pixel_val) <= 0.5f);
-
-            // Compute bin index range for the weight vector
-            lower_bin = pixel_bin_rounded;
-            upper_bin = pixel_bin_rounded + 2 * BinningMethod::INFLUENCE_MARGIN;
-
-            assert(0 <= lower_bin);
-            assert(lower_bin <= upper_bin);
-            assert(upper_bin <= NUM_HISTOGRAM_CENTRAL_BINS +
-                                    2 * BinningMethod::INFLUENCE_MARGIN - 1);
-
-            // Update weight storage for given pixel
-            int bin_weights_idx = 0;
-            for (int neighbor = lower_bin; neighbor <= upper_bin; ++neighbor) {
-                const float distance_to_neighbor =
-                    static_cast<float>(neighbor) - pixel_bin;
-
-                assert(std::abs(distance_to_neighbor) <
-                       (BinningMethod::INFLUENCE_MARGIN + 1));
-
-                bin_weights[bin_weights_idx] =
-                    BinningMethod::histogram_bin_function(distance_to_neighbor);
-                bin_weights_idx++;
-            }
-        };
+    WeightArray<BinningMethod> bin_weights_r{};
+    WeightArray<BinningMethod> bin_weights_r_derivative{};
+    WeightArray<BinningMethod> bin_weights_t{};
 
     for (int y = 0; y < reference.rows; ++y) {
         for (int x = 0; x < reference.cols; ++x) {
@@ -568,15 +577,19 @@ void joint_hist_gradient(const Mat& reference,
             const bool pixel_mask = (mask_reference_it(y, x, 0) != 0) &&
                                     (mask_tracked_it(y, x, 0) != 0);
 
+            assert(0.f <= mask_weight_r && mask_weight_r <= 1.f);
+            assert(0.f <= mask_weight_t && mask_weight_t <= 1.f);
+
             if (pixel_mask) {
                 // Get contribution data for reference image
-                computeBinContributionRange(y,
-                                            x,
-                                            img_r_it,
-                                            pixel_bin_r,
-                                            lower_bin_r,
-                                            upper_bin_r,
-                                            bin_weights_r);
+                computeBinContributionRange<PixelType, BinningMethod>(
+                    y,
+                    x,
+                    img_r_it,
+                    pixel_bin_r,
+                    lower_bin_r,
+                    upper_bin_r,
+                    bin_weights_r);
 
                 // Update reference image histogram and its derivative
                 int bin_weights_idx = 0;
@@ -598,13 +611,14 @@ void joint_hist_gradient(const Mat& reference,
                 }
 
                 // Get contribution data for tracked image
-                computeBinContributionRange(y,
-                                            x,
-                                            img_t_it,
-                                            pixel_bin_t,
-                                            lower_bin_t,
-                                            upper_bin_t,
-                                            bin_weights_t);
+                computeBinContributionRange<PixelType, BinningMethod>(
+                    y,
+                    x,
+                    img_t_it,
+                    pixel_bin_t,
+                    lower_bin_t,
+                    upper_bin_t,
+                    bin_weights_t);
 
                 ///
                 // Update joint histogram and its gradient
@@ -646,13 +660,13 @@ void joint_hist_gradient(const Mat& reference,
     }
 
     // Get histogram summations
-    double hist_r_sum  = sum_histogram(hist_r_it);
-    double hist_rt_sum = sum_histogram(hist_rt_it);
+    histogram_r_sum  = sum_histogram(hist_r_it);
+    histogram_rt_sum = sum_histogram(hist_rt_it);
 
     // Normalize histograms
-    normalize_histogram(hist_r_sum, hist_r_it);
-    normalize_histogram(hist_rt_sum, hist_rt_it);
-    normalize_histogram(hist_rt_sum, hist_rt_grad_it);
+    normalize_histogram(histogram_r_sum, hist_r_it);
+    normalize_histogram(histogram_rt_sum, hist_rt_it);
+    normalize_histogram(histogram_rt_sum, hist_rt_grad_it);
 
     return;
 }
@@ -660,18 +674,239 @@ void joint_hist_gradient(const Mat& reference,
 template <typename PixelType,
           typename SteepestType,
           typename BinningMethod,
+          typename TransformClass,
           typename MaskIteratorA,
           typename MaskIteratorB>
 void joint_hist_hessian(const Mat& reference,
-                         const MaskIteratorA& mask_reference_it,
-                         const Mat& steepest_ref_img,
-                         const Mat& tracked,
-                         const MaskIteratorB& mask_tracked_it,
-                         Mat& histogram_r,
-                         Mat& histogram_rt,
-                         Mat& histogram_rt_grad)
+                        const MaskIteratorA& mask_reference_it,
+                        const Mat& steepest_ref_grad,
+                        const Mat& steepest_ref_hess,
+                        const Mat& tracked,
+                        const MaskIteratorB& tracked_mask_it,
+                        const double histogram_r_sum,
+                        const double histogram_rt_sum,
+                        Mat& histogram_r_grad,
+                        Mat& histogram_rt_hess)
 {
+    const int transform_params = TransformClass::number_parameters;
+    const int hist_length =
+        NUM_HISTOGRAM_CENTRAL_BINS + 2 * BinningMethod::INFLUENCE_MARGIN;
 
+    // clang-format off
+    using SteepestColType  = Eigen::Matrix<float,
+                                           transform_params,
+                                           1>;
+    using SteepestRowType = Eigen::Matrix<float,
+                                           1,
+                                           transform_params>;
+    using HessianMatType   = Eigen::Matrix<float,
+                                           transform_params,
+                                           transform_params,
+                                           Eigen::RowMajor>;
+    // clang-format on
+
+    // This function works for single channel images only
+    assert(reference.channels() == 1);
+    assert(tracked.channels() == 1);
+
+    // The input images must have the same dimensions
+    assert(reference.rows == tracked.rows);
+    assert(reference.cols == tracked.cols);
+
+    // The steepest images must be of same width and height as the input images
+    assert(reference.rows == steepest_ref_grad.rows &&
+           reference.cols == steepest_ref_grad.cols);
+    assert(reference.rows == steepest_ref_hess.rows &&
+           reference.cols == steepest_ref_hess.cols);
+
+    // The input masks must have been correctly initialized
+    assert(mask_reference_it.is_mask_of(reference));
+    assert(tracked_mask_it.is_mask_of(tracked));
+
+    // The joint histogram sum must be valid
+    assert(histogram_rt_sum > 0.f);
+
+    // This was only tested with float steepest hessian and grad
+    assert(steepest_ref_grad.type() == Mat::Type::FLOAT32);
+    assert(steepest_ref_hess.type() == Mat::Type::FLOAT32);
+
+    // The provided steepest images must have been generated with the same
+    // TransformClass
+    assert(steepest_ref_grad.channels() == transform_params);
+    assert(steepest_ref_hess.channels() == transform_params * transform_params);
+
+    // The histogram sums must not be zero
+    assert(histogram_r_sum > 0.0);
+    assert(histogram_rt_sum > 0.0);
+
+    // Create iterators for input images
+    Mat::ConstIterator<PixelType> img_r_it(reference);
+    Mat::ConstIterator<PixelType> img_t_it(tracked);
+    Mat::ConstIterator<SteepestType> steepest_grad_it(steepest_ref_grad);
+    Mat::ConstIterator<SteepestType> steepest_hess_it(steepest_ref_hess);
+
+    // Storage for how much each pixel contribute to all histogram bins that are
+    // influenced by its value
+    WeightArray<BinningMethod> bin_weights_r{};
+    WeightArray<BinningMethod> bin_weights_r_derivative{};
+    WeightArray<BinningMethod> bin_weights_r_second_derivative{};
+    WeightArray<BinningMethod> bin_weights_t{};
+
+    // Allocate gradient output
+    if (histogram_r_grad.empty()) {
+        histogram_r_grad.create<float>(1, hist_length, transform_params);
+    } else {
+        assert(histogram_r_grad.type() == Mat::Type::FLOAT32);
+        assert(histogram_r_grad.rows == 1);
+        assert(histogram_r_grad.cols == hist_length);
+        assert(histogram_r_grad.channels() == transform_params);
+    }
+
+    // Allocate hessian output
+    if (histogram_rt_hess.empty()) {
+        histogram_rt_hess.create<float>(
+            hist_length, hist_length, transform_params * transform_params);
+    } else {
+        assert(histogram_rt_hess.type() == Mat::Type::FLOAT32);
+        assert(histogram_rt_hess.rows == hist_length);
+        assert(histogram_rt_hess.cols == hist_length);
+        assert(histogram_rt_hess.channels() ==
+               transform_params * transform_params);
+    }
+
+    // Initialize histograms
+    histogram_r_grad.fill<float>(0.f);
+    histogram_rt_hess.fill<float>(0.f);
+
+    // Create iterator for output histograms
+    Mat::Iterator<float> hist_r_grad_it(histogram_r_grad);
+    Mat::Iterator<float> hist_rt_hess_it(histogram_rt_hess);
+
+    // Iterate over all intersection pixels
+    for (int y = 0; y < reference.rows; ++y) {
+        for (int x = 0; x < reference.cols; ++x) {
+            int lower_bin_r;
+            int upper_bin_r;
+            float pixel_bin_r;
+
+            int lower_bin_t;
+            int upper_bin_t;
+            float pixel_bin_t;
+
+            // Compute pixel weight due to masking at borders
+            float mask_weight_r     = mask_reference_it(y, x, 0) / 255.f;
+            float mask_weight_t     = tracked_mask_it(y, x, 0) / 255.f;
+            float joint_mask_weight = mask_weight_r * mask_weight_t;
+
+            assert(0.f <= mask_weight_r && mask_weight_r <= 1.f);
+            assert(0.f <= mask_weight_t && mask_weight_t <= 1.f);
+
+            const bool pixel_mask = (mask_reference_it(y, x, 0) != 0) &&
+                                    (tracked_mask_it(y, x, 0) != 0);
+
+            if (pixel_mask) {
+                // Get contribution data for reference image
+                computeBinContributionRange<PixelType, BinningMethod>(
+                    y,
+                    x,
+                    img_r_it,
+                    pixel_bin_r,
+                    lower_bin_r,
+                    upper_bin_r,
+                    bin_weights_r);
+
+                // Update reference image histogram and its derivative
+                int bin_weights_idx = 0;
+                for (int neighbor = lower_bin_r; neighbor <= upper_bin_r;
+                     ++neighbor) {
+                    const float distance_to_neighbor =
+                        static_cast<float>(neighbor) - pixel_bin_r;
+
+                    assert(std::abs(distance_to_neighbor) <
+                           (BinningMethod::INFLUENCE_MARGIN + 1));
+
+                    bin_weights_r_derivative[bin_weights_idx] =
+                        BinningMethod::hbf_derivative(distance_to_neighbor);
+
+                    bin_weights_r_second_derivative[bin_weights_idx] =
+                        BinningMethod::hbf_second_derivative(
+                            distance_to_neighbor);
+
+                    bin_weights_idx++;
+                }
+
+                // Get contribution data for tracked image
+                computeBinContributionRange<PixelType, BinningMethod>(
+                    y,
+                    x,
+                    img_t_it,
+                    pixel_bin_t,
+                    lower_bin_t,
+                    upper_bin_t,
+                    bin_weights_t);
+
+                // Create Eigen support structures that only depend on the x,y
+                // coords
+                Eigen::Map<const HessianMatType> steepest_hess_mat(
+                    &steepest_hess_it(y, x, 0));
+                Eigen::Map<const SteepestColType> steepest_grad_col(
+                    &steepest_grad_it(y, x, 0));
+                Eigen::Map<const SteepestRowType> steepest_grad_row(
+                    &steepest_grad_it(y, x, 0));
+
+                for (int neighbor_r = lower_bin_r; neighbor_r <= upper_bin_r;
+                     ++neighbor_r) {
+
+                    const int bin_weight_r_idx = neighbor_r - lower_bin_r;
+
+                    assert(bin_weight_r_idx >= 0 &&
+                           bin_weight_r_idx < hist_length);
+
+                    Eigen::Map<SteepestRowType> grad_row(
+                        &hist_r_grad_it(0, neighbor_r, 0));
+
+                    ///
+                    // Evaluate gradient expression
+                    grad_row += mask_weight_r *
+                                -bin_weights_r_derivative[bin_weight_r_idx] *
+                                steepest_grad_row;
+
+                    for (int neighbor_t = lower_bin_t;
+                         neighbor_t <= upper_bin_t;
+                         ++neighbor_t) {
+                        const int bin_weight_t_idx = neighbor_t - lower_bin_t;
+
+                        assert(bin_weight_t_idx >= 0 &&
+                               bin_weight_t_idx < hist_length);
+
+                        // Create Eigen support structures that depend on the
+                        // current bin
+                        Eigen::Map<HessianMatType> hess_mat(
+                            &hist_rt_hess_it(neighbor_t, neighbor_r, 0));
+
+                        ///
+                        // Evaluate Hessian expression
+                        HessianMatType hessian_expression =
+                            bin_weights_r_derivative[bin_weight_r_idx] *
+                                steepest_hess_mat -
+                            bin_weights_r_second_derivative[bin_weight_r_idx] *
+                                steepest_grad_col * steepest_grad_row;
+
+                        // Update Histogram Hessian
+                        hess_mat += joint_mask_weight *
+                                    -bin_weights_t[bin_weight_t_idx] *
+                                    hessian_expression;
+                    }
+                }
+            }
+        }
+    }
+
+    // Normalize output histograms
+    normalize_histogram(histogram_r_sum, hist_r_grad_it);
+    normalize_histogram(histogram_rt_sum, hist_rt_hess_it);
+
+    return;
 }
 
 #endif

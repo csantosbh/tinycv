@@ -76,6 +76,8 @@ class Mat
     template <typename PixelType>
     Mat& fill(typename dependent_type<PixelType>::type value)
     {
+        assert(get_type_enum<PixelType>() == type());
+
         const int num_channels = channels();
         Iterator<PixelType> dst_it(*this);
 
@@ -177,6 +179,7 @@ class Mat
         Iterator(Mat& m_)
             : m(m_)
         {
+            assert(get_type_enum<PixelType>() == m.type());
         }
 
         Iterator<T>& operator=(Iterator<T>& o);
@@ -203,6 +206,7 @@ class Mat
         ConstIterator(const Mat& m_)
             : m(m_)
         {
+            assert(get_type_enum<PixelType>() == m.type());
         }
 
         ConstIterator(const ConstIterator& cv_it)
@@ -224,6 +228,8 @@ class Mat
             assert(row < m.rows);
             assert(col >= 0);
             assert(col < m.cols);
+            assert(chan >= 0);
+            assert(chan < m.channels());
 
             return (static_cast<T*>(
                 m.data))[row * m.step.buf[0] + col * m.step.buf[1] + chan];
