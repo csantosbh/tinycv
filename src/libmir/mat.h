@@ -14,6 +14,12 @@ struct dependent_type
     using type = T;
 };
 
+template<typename PointType>
+struct Point
+{
+    PointType x;
+    PointType y;
+};
 
 class Mat
 {

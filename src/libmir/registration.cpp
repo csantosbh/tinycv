@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "bounding_box.h"
+#include "derivative.h"
 #include "histogram.h"
 #include "interpolation.h"
 #include "mat.h"
@@ -13,8 +14,11 @@
 #include "registration.h"
 #include "sat.h"
 #include "transform.h"
-#include "derivative.h"
 
+
+const float TEST_ALPHA_RANGE   = 10.f;
+const float TEST_DELTA_ALPHA   = 0.05f;
+const int TEST_ALPHA_MODEL_IDX = 2;
 
 void visualize_steepest_descent_imgs(const Mat& steepest_img)
 {
@@ -333,18 +337,15 @@ void generate_mi_space(const std::string& file_name, const Mat& source)
     }
 
     /// Translation
-    const float dt = 0.0002f;
     for (float y = 0; y <= 0; y += 0.1f) {
-        for (float x = -dt; x <= dt; x += 0.0000025f) {
-            const int alpha_pos = 6;
-
+        for (float x = -TEST_ALPHA_RANGE; x <= TEST_ALPHA_RANGE; x += TEST_DELTA_ALPHA) {
             // clang-format off
             std::vector<float> translation_data {
                 1.f, 0.f, 0.f,
                 0.f, 1.f, 0.f,
                 0.f, 0.f, 1.f
             };
-            translation_data[alpha_pos] = x;
+            translation_data[TEST_ALPHA_MODEL_IDX] = x;
             // clang-format on
 
             Eigen::Map<const Matrix3fRowMajor> translate(
@@ -469,15 +470,16 @@ void generate_mi_space(const std::string& file_name, const Mat& source)
 
 void test_steepest_descent_imgs(const Mat& source)
 {
-    using GradPixelType = float;
+    using GradPixelType    = float;
+    using DerivativeMethod = DerivativeHoloborodko<1, FilterOrder::Fifth>;
 
     Mat grad_x;
     Mat grad_y;
-    derivative_holoborodko<uint8_t, GradPixelType, 1>(
-        source, ImageDerivativeAxis::dX, FilterOrder::Fifth, grad_x);
+    DerivativeMethod::derivative<uint8_t, GradPixelType>(
+        source, ImageDerivativeAxis::dX, grad_x);
 
-    derivative_holoborodko<uint8_t, GradPixelType, 1>(
-        source, ImageDerivativeAxis::dY, FilterOrder::Fifth, grad_y);
+    DerivativeMethod::derivative<uint8_t, GradPixelType>(
+        source, ImageDerivativeAxis::dY, grad_y);
 
     Mat steepest_img;
     generate_steepest_descent_imgs<GradPixelType,
@@ -495,20 +497,31 @@ void test_image_derivative(const Mat& source)
     Mat dy;
     Mat dxy;
 
-    derivative_holoborodko<uint8_t, float, 1>(
-        source, ImageDerivativeAxis::dX, FilterOrder::Fifth, dx);
+    using DerivativeMethod = DerivativeHoloborodko<1, FilterOrder::Fifth>;
+    // const int cropped_border = DerivativeMethod::border_crop_size();
 
-    derivative_holoborodko<uint8_t, float, 1>(
-        source, ImageDerivativeAxis::dY, FilterOrder::Fifth, dy);
+    DerivativeMethod::derivative<uint8_t, float>(
+        source, ImageDerivativeAxis::dX, dx);
 
-    derivative_holoborodko<float, float, 1>(
-        dx, ImageDerivativeAxis::dY, FilterOrder::Fifth, dxy);
+    DerivativeMethod::derivative<uint8_t, float>(
+        source, ImageDerivativeAxis::dY, dy);
+
+    DerivativeMethod::derivative<float, float>(
+        dx, ImageDerivativeAxis::dY, dxy);
+
+    Mat naive_dx;
+    Mat naive_dy;
+    DerivativeNaive<1>::derivative<uint8_t, float>(
+        source, ImageDerivativeAxis::dX, naive_dx);
+    DerivativeNaive<1>::derivative<uint8_t, float>(
+        source, ImageDerivativeAxis::dX, naive_dy);
+    const int cropped_border = DerivativeNaive<1>::border_crop_size();
 
     Mat cropped = image_crop<uint8_t>(
         source,
-        BoundingBox({{{2, 2}},
-                     {{static_cast<float>(source.cols) - 3,
-                       static_cast<float>(source.rows - 3)}}}));
+        BoundingBox({{cropped_border, cropped_border},
+                     {static_cast<float>(source.cols - cropped_border - 1),
+                      static_cast<float>(source.rows - cropped_border - 1)}}));
 
     return;
 }
@@ -541,9 +554,11 @@ void generate_mi_derivative_space(const std::string& file_name,
                                   const Mat& source,
                                   const Mat& destination)
 {
-    using PixelType      = float;
-    using GradPixelType  = float;
-    using TransformClass = HomographyTransform<float>;
+    using PixelType        = float;
+    using GradPixelType    = float;
+    using TransformClass   = HomographyTransform<float>;
+    using DerivativeMethod = DerivativeNaive<1>;
+    const int gradient_border = DerivativeMethod::border_crop_size();
 
     // Open output file
     std::ofstream file_handle;
@@ -553,12 +568,11 @@ void generate_mi_derivative_space(const std::string& file_name,
     Mat grad_x;
     Mat grad_y;
 
-    const int gradient_border = 2;
-    derivative_holoborodko<PixelType, GradPixelType, 1>(
-        destination, ImageDerivativeAxis::dX, FilterOrder::Fifth, grad_x);
+    DerivativeMethod::derivative<PixelType, GradPixelType>(
+        destination, ImageDerivativeAxis::dX, grad_x);
 
-    derivative_holoborodko<PixelType, GradPixelType, 1>(
-        destination, ImageDerivativeAxis::dY, FilterOrder::Fifth, grad_y);
+    DerivativeMethod::derivative<PixelType, GradPixelType>(
+        destination, ImageDerivativeAxis::dY, grad_y);
 
     // Crop image borders to match their sizes with the derivative
     BoundingBox border_bb{
@@ -619,16 +633,15 @@ void generate_mi_derivative_space(const std::string& file_name,
     Mat gradient;
     gradient.create<float>(1, TransformClass::number_parameters, 1);
 
-    const float dt = 0.0002f;
-    for (float alpha = -dt; alpha <= dt; alpha += 0.0000025f) {
-        const int alpha_pos = 6;
+    for (float alpha = -TEST_ALPHA_RANGE; alpha <= TEST_ALPHA_RANGE;
+         alpha += TEST_DELTA_ALPHA) {
         // clang-format off
         std::vector<float> interest_transform {
             1.f, 0.f, 0.f,
             0.f, 1.f, 0.f,
             0.f, 0.f, 1.f
         };
-        interest_transform[alpha_pos] = alpha;
+        interest_transform[TEST_ALPHA_MODEL_IDX] = alpha;
         // clang-format on
         Eigen::Map<const Matrix3fRowMajor> interest_transform_mat(
             interest_transform.data());
@@ -663,7 +676,8 @@ void generate_mi_derivative_space(const std::string& file_name,
 
         Mat::Iterator<float> grad_it(gradient);
 
-        file_handle << alpha << " " << grad_it(0, alpha_pos, 0) << std::endl;
+        file_handle << alpha << " " << grad_it(0, TEST_ALPHA_MODEL_IDX, 0)
+                    << std::endl;
     }
 
     // Close output file
@@ -681,6 +695,9 @@ void generate_mi_hessian_space(const std::string& file_name,
     using TransformClass        = HomographyTransform<float>;
     using TransformImgDerivType = float;
     using BinningMethod         = BSpline4;
+    using DerivativeMethod      = DerivativeNaive<1>;
+
+    const int gradient_border = DerivativeMethod::border_crop_size();
 
     // Open output file
     std::ofstream file_handle;
@@ -695,29 +712,28 @@ void generate_mi_hessian_space(const std::string& file_name,
     Mat grad_yx;
     Mat grad_yy;
 
-    const int gradient_border = 2;
     ///
     // Generate gradients
-    derivative_holoborodko<PixelType, GradPixelType, 1>(
-        destination, ImageDerivativeAxis::dX, FilterOrder::Fifth, grad_x);
+    DerivativeMethod::derivative<PixelType, GradPixelType>(
+        destination, ImageDerivativeAxis::dX, grad_x);
 
-    derivative_holoborodko<PixelType, GradPixelType, 1>(
-        destination, ImageDerivativeAxis::dY, FilterOrder::Fifth, grad_y);
+    DerivativeMethod::derivative<PixelType, GradPixelType>(
+        destination, ImageDerivativeAxis::dY, grad_y);
 
     ///
     // Generate second gradients
-    derivative_holoborodko<GradPixelType, GradPixelType, 1>(
-        grad_x, ImageDerivativeAxis::dX, FilterOrder::Fifth, grad_xx);
+    DerivativeMethod::derivative<GradPixelType, GradPixelType>(
+        grad_x, ImageDerivativeAxis::dX, grad_xx);
 
-    derivative_holoborodko<GradPixelType, GradPixelType, 1>(
-        grad_x, ImageDerivativeAxis::dY, FilterOrder::Fifth, grad_xy);
+    DerivativeMethod::derivative<GradPixelType, GradPixelType>(
+        grad_x, ImageDerivativeAxis::dY, grad_xy);
 
     // TODO grad_xy = grad_yx. No need for replication
-    derivative_holoborodko<GradPixelType, GradPixelType, 1>(
-        grad_y, ImageDerivativeAxis::dX, FilterOrder::Fifth, grad_yx);
+    DerivativeMethod::derivative<GradPixelType, GradPixelType>(
+        grad_y, ImageDerivativeAxis::dX, grad_yx);
 
-    derivative_holoborodko<GradPixelType, GradPixelType, 1>(
-        grad_y, ImageDerivativeAxis::dY, FilterOrder::Fifth, grad_yy);
+    DerivativeMethod::derivative<GradPixelType, GradPixelType>(
+        grad_y, ImageDerivativeAxis::dY, grad_yy);
 
     ///
     // Crop image borders to match their sizes with the second derivative
@@ -843,16 +859,15 @@ void generate_mi_hessian_space(const std::string& file_name,
                           TransformClass::number_parameters,
                           1);
 
-    const float dt = 0.0002f;
-    for (float alpha = -dt; alpha <= dt; alpha += 0.0000025f) {
-        const int alpha_pos = 6;
+    for (float alpha = -TEST_ALPHA_RANGE; alpha <= TEST_ALPHA_RANGE;
+         alpha += TEST_DELTA_ALPHA) {
         // clang-format off
         std::vector<float> interest_transform {
             1.f, 0.f, 0.f,
             0.f, 1.f, 0.f,
             0.f, 0.f, 1.f
         };
-        interest_transform[alpha_pos] = alpha;
+        interest_transform[TEST_ALPHA_MODEL_IDX] = alpha;
         // clang-format on
         Eigen::Map<const Matrix3fRowMajor> interest_transform_mat(
             interest_transform.data());
@@ -913,7 +928,8 @@ void generate_mi_hessian_space(const std::string& file_name,
             hessian);
 
         Mat::Iterator<float> hess_it(hessian);
-        file_handle << alpha << " " << hess_it(alpha_pos, alpha_pos, 0)
+        file_handle << alpha << " "
+                    << hess_it(TEST_ALPHA_MODEL_IDX, TEST_ALPHA_MODEL_IDX, 0)
                     << std::endl;
     }
 
@@ -999,8 +1015,6 @@ bool register_translation(const Mat& source,
     generate_mi_space(source);
     */
 
-    // test_image_derivative(source);
-
     // test_bspline_4();
 
     // test_steepest_descent_imgs(source);
@@ -1045,6 +1059,8 @@ bool register_translation(const Mat& source,
     // Preprocess image
     Mat blurred_normalized =
         image_scale_histogram<uint8_t, float>(source_blurred);
+
+    // test_image_derivative(source);
 
     generate_mi_space("mi.txt", blurred_normalized);
     generate_mi_derivative_space(

@@ -6,6 +6,7 @@
 #include <Eigen/Eigen>
 
 #include "mat.h"
+#include "math.h"
 
 using Matrix3fRowMajor = Eigen::Matrix<float, 3, 3, Eigen::RowMajor>;
 
@@ -219,61 +220,6 @@ void image_convolve(const Mat& image,
     return;
 }
 
-enum class ImageDerivativeAxis { dX, dY };
-template <typename InputPixelType, typename OutputPixelType, int channels>
-void derivative_holoborodko_impl(
-    const Mat& image,
-    ImageDerivativeAxis axis,
-    const std::initializer_list<float>& high_pass_component,
-    const std::initializer_list<float>& low_pass_component,
-    const float norm_factor,
-    Mat& output_image)
-{
-    assert(std::is_signed<OutputPixelType>::value);
-    assert(high_pass_component.size() == low_pass_component.size());
-
-    Mat horizontal_kernel;
-    Mat vertical_kernel;
-
-    const int kernel_length = static_cast<int>(high_pass_component.size());
-
-    horizontal_kernel.create<float>(1, kernel_length, 1);
-    vertical_kernel.create<float>(1, kernel_length, 1);
-
-    if (axis == ImageDerivativeAxis::dX) {
-        horizontal_kernel << high_pass_component;
-        vertical_kernel << low_pass_component;
-    } else {
-        assert(axis == ImageDerivativeAxis::dY);
-
-        horizontal_kernel << low_pass_component;
-        vertical_kernel << high_pass_component;
-    }
-
-    image_convolve<InputPixelType, OutputPixelType, channels>(
-        image, vertical_kernel, horizontal_kernel, norm_factor, output_image);
-
-    if(axis==ImageDerivativeAxis::dX) {
-        Mat::ConstIterator<InputPixelType> inp_it(image);
-        output_image.for_each<Mat::Iterator<OutputPixelType>>(
-         [&inp_it]
-         (Mat::Iterator<OutputPixelType>& it, int y, int x, int c) {
-            int xNext = 2+x+1;
-            int xPrev = 2+x-1;
-            it(y, x, c) = (OutputPixelType)(inp_it(y, xNext, c) - inp_it(y, xPrev, c))/(OutputPixelType)2;
-        });
-    } else {
-        Mat::ConstIterator<InputPixelType> inp_it(image);
-        output_image.for_each<Mat::Iterator<OutputPixelType>>(
-         [&inp_it]
-         (Mat::Iterator<OutputPixelType>& it, int y, int x, int c) {
-            int yNext = 2+y+1;
-            int yPrev = 2+y-1;
-            it(y, x, c) = (OutputPixelType)(inp_it(yNext, x, c) - inp_it(yPrev, x, c))/(OutputPixelType)2;
-        });
-    }
-}
-
 template <typename InputPixelType, typename OutputPixelType, int channels>
 void gaussian_blur(const Mat& image,
                    int kernel_border_size,
@@ -298,44 +244,6 @@ void gaussian_blur(const Mat& image,
         image, kernel, kernel, norm_factor, output_image);
 
     return;
-}
-
-enum class FilterOrder { Fifth, Seventh };
-/**
- * Compute the image derivative along the specified axis.
- *
- * Note that the output image borders WILL BE CROPPED by an amount proportional
- * to the chosen filter order.
- */
-template <typename InputPixelType, typename OutputPixelType, int channels>
-void derivative_holoborodko(const Mat& image,
-                            ImageDerivativeAxis axis,
-                            FilterOrder filter_order,
-                            Mat& output_image)
-{
-    // Sample kernels:
-    // [1 2 1]' * [-1 -2 0 2 1], border: 1 row, 2 cols
-    // [1 4 6 4 1]' * [-1 -4 -5 0 5 4 1], border: 2 rows, 3 cols
-
-    if (filter_order == FilterOrder::Fifth) {
-        derivative_holoborodko_impl<InputPixelType, OutputPixelType, channels>(
-            image,
-            axis,
-            {-1, -2, 0, 2, 1},
-            {1, 1, 2, 1, 1},
-            1.f / 32.f,
-            output_image);
-    } else {
-        assert(filter_order == FilterOrder::Seventh);
-
-        derivative_holoborodko_impl<InputPixelType, OutputPixelType, channels>(
-            image,
-            axis,
-            {-1, -4, -5, 0, 5, 4, 1},
-            {1, 1, 4, 6, 4, 1, 1},
-            1.f / 512.f,
-            output_image);
-    }
 }
 
 template <typename TransformElementType>

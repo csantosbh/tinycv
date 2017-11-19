@@ -204,7 +204,7 @@ void normalize_histogram(double histogram_summation,
 /**
  * Build histograms for two images, as well as their joint histogram
  *
- * The output is TODO(rowmajor ou colmajor), with rows representing the bins for
+ * The output is rowmajor, with rows representing the bins for
  * image_a, and the columns representing the bins for image_b.
  *
  * Binning layout sample for 8 bins:
@@ -250,11 +250,6 @@ void joint_image_histogram(const Mat& image_a,
     Mat::ConstIterator<PixelType> img_a_it(image_a);
     Mat::ConstIterator<PixelType> img_b_it(image_b);
 
-    // Create iterators for histograms
-    Mat::Iterator<float> hist_a_it(histogram_a);
-    Mat::Iterator<float> hist_b_it(histogram_b);
-    Mat::Iterator<float> hist_ab_it(histogram_ab);
-
     const int hist_length =
         NUM_HISTOGRAM_CENTRAL_BINS + 2 * BinningMethod::INFLUENCE_MARGIN;
 
@@ -287,6 +282,11 @@ void joint_image_histogram(const Mat& image_a,
         assert(histogram_ab.cols == hist_length);
         assert(histogram_ab.channels() == 1);
     }
+
+    // Create iterators for histograms
+    Mat::Iterator<float> hist_a_it(histogram_a);
+    Mat::Iterator<float> hist_b_it(histogram_b);
+    Mat::Iterator<float> hist_ab_it(histogram_ab);
 
     // Initialize histograms
     histogram_a.fill<float>(0.f);
@@ -446,7 +446,8 @@ void computeBinContributionRange(int y,
     lower_bin = pixel_bin_rounded;
     upper_bin = pixel_bin_rounded + 2 * BinningMethod::INFLUENCE_MARGIN;
 
-    // TODO the pixel val can go up to 7.5 (when pix=255). I have to deal with it.
+    // TODO the pixel val can go up to 7.5 (when pix=255). I have to deal with
+    // it.
     assert(0 <= lower_bin);
     assert(lower_bin <= upper_bin);
     assert(upper_bin <= NUM_HISTOGRAM_CENTRAL_BINS +
