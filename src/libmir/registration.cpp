@@ -16,11 +16,11 @@
 #include "transform.h"
 
 
-const float TEST_ALPHA_RANGE   = 10.f;
-const float TEST_DELTA_ALPHA   = 0.25f;
+const float TEST_ALPHA_RANGE   = 1.f;
+const float TEST_DELTA_ALPHA   = 0.5f;
 const int TEST_ALPHA_MODEL_IDX = 2;
 
-void visualize_steepest_descent_imgs(const Mat& steepest_img)
+void visualize_steepest_gradient(const Mat& steepest_grad)
 {
     Mat steepest0;
     Mat steepest1;
@@ -31,14 +31,14 @@ void visualize_steepest_descent_imgs(const Mat& steepest_img)
     Mat steepest6;
     Mat steepest7;
 
-    steepest0.create<float>(steepest_img.rows, steepest_img.cols, 1);
-    steepest1.create<float>(steepest_img.rows, steepest_img.cols, 1);
-    steepest2.create<float>(steepest_img.rows, steepest_img.cols, 1);
-    steepest3.create<float>(steepest_img.rows, steepest_img.cols, 1);
-    steepest4.create<float>(steepest_img.rows, steepest_img.cols, 1);
-    steepest5.create<float>(steepest_img.rows, steepest_img.cols, 1);
-    steepest6.create<float>(steepest_img.rows, steepest_img.cols, 1);
-    steepest7.create<float>(steepest_img.rows, steepest_img.cols, 1);
+    steepest0.create<float>(steepest_grad.rows, steepest_grad.cols, 1);
+    steepest1.create<float>(steepest_grad.rows, steepest_grad.cols, 1);
+    steepest2.create<float>(steepest_grad.rows, steepest_grad.cols, 1);
+    steepest3.create<float>(steepest_grad.rows, steepest_grad.cols, 1);
+    steepest4.create<float>(steepest_grad.rows, steepest_grad.cols, 1);
+    steepest5.create<float>(steepest_grad.rows, steepest_grad.cols, 1);
+    steepest6.create<float>(steepest_grad.rows, steepest_grad.cols, 1);
+    steepest7.create<float>(steepest_grad.rows, steepest_grad.cols, 1);
 
     Mat::Iterator<float> steepest0_it(steepest0);
     Mat::Iterator<float> steepest1_it(steepest1);
@@ -49,7 +49,7 @@ void visualize_steepest_descent_imgs(const Mat& steepest_img)
     Mat::Iterator<float> steepest6_it(steepest6);
     Mat::Iterator<float> steepest7_it(steepest7);
 
-    Mat::ConstIterator<float> steepest_it(steepest_img);
+    Mat::ConstIterator<float> steepest_it(steepest_grad);
 
     for (int y = 0; y < steepest0.rows; ++y) {
         for (int x = 0; x < steepest0.cols; ++x) {
@@ -67,7 +67,7 @@ void visualize_steepest_descent_imgs(const Mat& steepest_img)
     return;
 }
 
-void visualize_steepest_hessian_imgs(const Mat& steepest_img)
+void visualize_steepest_hessian(const Mat& steepest_hess)
 {
     Mat steephess0;
     Mat steephess1;
@@ -80,14 +80,14 @@ void visualize_steepest_hessian_imgs(const Mat& steepest_img)
 
     const int num_params = 8;
 
-    steephess0.create<float>(steepest_img.rows, steepest_img.cols, 1);
-    steephess1.create<float>(steepest_img.rows, steepest_img.cols, 1);
-    steephess2.create<float>(steepest_img.rows, steepest_img.cols, 1);
-    steephess3.create<float>(steepest_img.rows, steepest_img.cols, 1);
-    steephess4.create<float>(steepest_img.rows, steepest_img.cols, 1);
-    steephess5.create<float>(steepest_img.rows, steepest_img.cols, 1);
-    steephess6.create<float>(steepest_img.rows, steepest_img.cols, 1);
-    steephess7.create<float>(steepest_img.rows, steepest_img.cols, 1);
+    steephess0.create<float>(steepest_hess.rows, steepest_hess.cols, 1);
+    steephess1.create<float>(steepest_hess.rows, steepest_hess.cols, 1);
+    steephess2.create<float>(steepest_hess.rows, steepest_hess.cols, 1);
+    steephess3.create<float>(steepest_hess.rows, steepest_hess.cols, 1);
+    steephess4.create<float>(steepest_hess.rows, steepest_hess.cols, 1);
+    steephess5.create<float>(steepest_hess.rows, steepest_hess.cols, 1);
+    steephess6.create<float>(steepest_hess.rows, steepest_hess.cols, 1);
+    steephess7.create<float>(steepest_hess.rows, steepest_hess.cols, 1);
 
     Mat::Iterator<float> steephess0_it(steephess0);
     Mat::Iterator<float> steephess1_it(steephess1);
@@ -98,7 +98,7 @@ void visualize_steepest_hessian_imgs(const Mat& steepest_img)
     Mat::Iterator<float> steephess6_it(steephess6);
     Mat::Iterator<float> steephess7_it(steephess7);
 
-    Mat::ConstIterator<float> steepest_it(steepest_img);
+    Mat::ConstIterator<float> steepest_it(steepest_hess);
 
     for (int y = 0; y < steephess0.rows; ++y) {
         for (int x = 0; x < steephess0.cols; ++x) {
@@ -116,49 +116,63 @@ void visualize_steepest_hessian_imgs(const Mat& steepest_img)
     return;
 }
 
-
-template <typename GradPixelType,
-          typename TransformClass,
-          typename SteepestPixelType>
-void generate_steepest_descent_imgs(const Mat& grad_x,
-                                    const Mat& grad_y,
-                                    Mat& steepest_img)
+template <typename GradPixelType, typename TransformClass>
+void generate_steepest_gradient(const Mat& grad_x,
+                                const Mat& grad_y,
+                                Mat& steepest_grad)
 {
-    using TransformElementType = typename TransformClass::ElementType;
-    const int transform_params = TransformClass::number_parameters;
+    const int number_transform_params = TransformClass::number_parameters;
 
+    // All gradient images must have the same dimensions
     assert(grad_x.cols == grad_y.cols);
     assert(grad_x.rows == grad_y.rows);
-    assert(grad_x.channels() == grad_y.channels());
 
-    if (steepest_img.empty()) {
-        steepest_img.create<SteepestPixelType>(
-            grad_x.rows, grad_x.cols, transform_params);
+    // All gradient images must have a single channel
+    assert(grad_x.channels() == 1);
+    assert(grad_y.channels() == 1);
+
+    // All gradient images must have the same pixel type: GradPixelType
+    assert(grad_x.type() == Mat::get_type_enum<GradPixelType>());
+    assert(grad_x.type() == grad_y.type());
+
+    // The transform must use the same pixel type as the gradients
+    assert(Mat::get_type_enum<typename TransformClass::ElementType>() ==
+           Mat::get_type_enum<GradPixelType>());
+
+    if (steepest_grad.empty()) {
+        steepest_grad.create<GradPixelType>(
+            grad_x.rows, grad_x.cols, number_transform_params);
+    } else {
+        // The output steepest must have the same dimensions as the input
+        // gradients
+        assert(steepest_grad.cols == grad_x.cols);
+        assert(steepest_grad.rows == grad_x.rows);
+
+        // Make sure the output has the correct number of channels
+        assert(steepest_grad.channels() == number_transform_params);
+
+        // Make sure the output has the correct type
+        assert(steepest_grad.type() == Mat::get_type_enum<GradPixelType>());
     }
 
-    assert(steepest_img.cols == grad_x.cols);
-    assert(steepest_img.rows == grad_x.rows);
-    assert(steepest_img.channels() == transform_params);
-
     Mat transform_jacobian;
-    transform_jacobian.create<TransformElementType>(2, transform_params, 1);
+    transform_jacobian.create<GradPixelType>(2, number_transform_params, 1);
 
     Mat::ConstIterator<GradPixelType> grad_x_it(grad_x);
     Mat::ConstIterator<GradPixelType> grad_y_it(grad_y);
-    Mat::Iterator<TransformElementType> transform_jacob_it(transform_jacobian);
-    Mat::Iterator<SteepestPixelType> steepest_it(steepest_img);
+    Mat::Iterator<GradPixelType> transform_jacob_it(transform_jacobian);
+    Mat::Iterator<GradPixelType> steepest_it(steepest_grad);
 
     for (int y = 0; y < grad_x.rows; ++y) {
         for (int x = 0; x < grad_x.cols; ++x) {
             GradPixelType grad_x_pixel = grad_x_it(y, x, 0);
             GradPixelType grad_y_pixel = grad_y_it(y, x, 0);
 
-            TransformClass::jacobian_origin(
-                static_cast<TransformElementType>(x),
-                static_cast<TransformElementType>(y),
-                transform_jacobian);
+            TransformClass::jacobian_origin(static_cast<GradPixelType>(x),
+                                            static_cast<GradPixelType>(y),
+                                            transform_jacobian);
 
-            for (int param = 0; param < transform_params; ++param) {
+            for (int param = 0; param < number_transform_params; ++param) {
                 steepest_it(y, x, param) =
                     grad_x_pixel * transform_jacob_it(0, param, 0) +
                     grad_y_pixel * transform_jacob_it(1, param, 0);
@@ -167,92 +181,111 @@ void generate_steepest_descent_imgs(const Mat& grad_x,
     }
 }
 
-template <typename GradPixelType,
-          typename TransformClass,
-          typename HessianPixelType>
-void generate_transformed_img_hessian(const Mat& grad_x,
-                                      const Mat& grad_y,
-                                      const Mat& grad_xx,
-                                      const Mat& grad_xy,
-                                      const Mat& grad_yx,
-                                      const Mat& grad_yy,
-                                      Mat& image_hessian)
+template <typename GradPixelType, typename TransformClass>
+void generate_steepest_hessian(const Mat& grad_x,
+                               const Mat& grad_y,
+                               const Mat& grad_xx,
+                               const Mat& grad_xy,
+                               const Mat& grad_yx,
+                               const Mat& grad_yy,
+                               Mat& steepest_hess)
 {
-    using TransformElementType = typename TransformClass::ElementType;
-    const int transform_params = TransformClass::number_parameters;
+    const int number_transform_params = TransformClass::number_parameters;
 
-    // clang-format off
-    using SteepestColType  = Eigen::Matrix<HessianPixelType,
-                                           transform_params,
-                                           1>;
-    using TransformRowType = Eigen::Matrix<TransformElementType,
-                                           1,
-                                           transform_params>;
-    using HessianMatType   = Eigen::Matrix<HessianPixelType,
-                                           transform_params,
-                                           transform_params,
-                                           Eigen::RowMajor>;
-    // clang-format on
-
-    ///
-    // Allocate output
-    if (image_hessian.empty()) {
-        image_hessian.create<HessianPixelType>(
-            grad_x.rows, grad_x.cols, transform_params * transform_params);
-    }
-
-    ///
-    // Check for input correctness
+    // All gradient images must have the same dimensions
     assert(grad_x.cols == grad_y.cols && grad_x.rows == grad_y.rows);
     assert(grad_x.cols == grad_xx.cols && grad_x.rows == grad_xx.rows);
     assert(grad_x.cols == grad_xy.cols && grad_x.rows == grad_xy.rows);
     assert(grad_x.cols == grad_yx.cols && grad_x.rows == grad_yx.rows);
     assert(grad_x.cols == grad_yy.cols && grad_x.rows == grad_yy.rows);
-    assert(grad_x.cols == image_hessian.cols &&
-           grad_x.rows == image_hessian.rows);
 
-    assert(grad_x.channels() == 1 && grad_y.channels() == 1);
-    assert(grad_xx.channels() == 1 && grad_xy.channels() == 1);
-    assert(grad_yx.channels() == 1 && grad_yy.channels() == 1);
-    assert(image_hessian.channels() == transform_params * transform_params);
+    // All gradient images must have a single channel
+    assert(grad_x.channels() == 1);
+    assert(grad_y.channels() == 1);
+    assert(grad_xx.channels() == 1);
+    assert(grad_xy.channels() == 1);
+    assert(grad_yx.channels() == 1);
+    assert(grad_yy.channels() == 1);
+
+    // All gradient images must have the same pixel type: GradPixelType
+    assert(grad_x.type() == Mat::get_type_enum<GradPixelType>());
+    assert(grad_x.type() == grad_y.type());
+    assert(grad_x.type() == grad_xx.type());
+    assert(grad_x.type() == grad_xy.type());
+    assert(grad_x.type() == grad_yx.type());
+    assert(grad_x.type() == grad_yy.type());
+
+    // The transform must use the same pixel type as the gradients
+    assert(Mat::get_type_enum<typename TransformClass::ElementType>() ==
+           Mat::get_type_enum<GradPixelType>());
+
+    // clang-format off
+    using SteepestColType  = Eigen::Matrix<GradPixelType,
+                                           number_transform_params,
+                                           1>;
+    using TransformRowType = Eigen::Matrix<GradPixelType,
+                                           1,
+                                           number_transform_params>;
+    using HessianMatType   = Eigen::Matrix<GradPixelType,
+                                           number_transform_params,
+                                           number_transform_params,
+                                           Eigen::RowMajor>;
+    // clang-format on
+
+    ///
+    // Allocate output
+    if (steepest_hess.empty()) {
+        steepest_hess.create<GradPixelType>(grad_x.rows,
+                                            grad_x.cols,
+                                            number_transform_params *
+                                                number_transform_params);
+    } else {
+        // The output steepest must have the same dimensions as the input
+        // gradients
+        assert(grad_x.cols == steepest_hess.cols &&
+               grad_x.rows == steepest_hess.rows);
+
+        // Make sure the output has the correct number of channels
+        assert(steepest_hess.channels() ==
+               number_transform_params * number_transform_params);
+
+        // Make sure the output has the correct type
+        assert(steepest_hess.type() == Mat::get_type_enum<GradPixelType>());
+    }
 
     ///
     // Generate second order steepest images
     Mat steepest_grad_x;
     Mat steepest_grad_y;
 
-    generate_steepest_descent_imgs<GradPixelType,
-                                   TransformClass,
-                                   HessianPixelType>(
+    generate_steepest_gradient<GradPixelType, TransformClass>(
         grad_xx, grad_xy, steepest_grad_x);
 
-    generate_steepest_descent_imgs<GradPixelType,
-                                   TransformClass,
-                                   HessianPixelType>(
+    generate_steepest_gradient<GradPixelType, TransformClass>(
         grad_yx, grad_yy, steepest_grad_y);
 
     ///
     // Allocate buffer for transform jacobian
     Mat transform_jacobian;
-    transform_jacobian.create<TransformElementType>(2, transform_params, 1);
+    transform_jacobian.create<GradPixelType>(2, number_transform_params, 1);
 
     ///
     // Allocate buffer for transform hessians
     Mat transform_hessian_x;
     Mat transform_hessian_y;
-    transform_hessian_x.create<TransformElementType>(
-        transform_params, transform_params, 1);
-    transform_hessian_y.create<TransformElementType>(
-        transform_params, transform_params, 1);
+    transform_hessian_x.create<GradPixelType>(
+        number_transform_params, number_transform_params, 1);
+    transform_hessian_y.create<GradPixelType>(
+        number_transform_params, number_transform_params, 1);
 
     ///
     // Create iterators
-    Mat::Iterator<HessianPixelType> steepest_x_it(steepest_grad_x);
-    Mat::Iterator<HessianPixelType> steepest_y_it(steepest_grad_y);
-    Mat::Iterator<HessianPixelType> img_hessian_it(image_hessian);
+    Mat::Iterator<GradPixelType> steepest_x_it(steepest_grad_x);
+    Mat::Iterator<GradPixelType> steepest_y_it(steepest_grad_y);
+    Mat::Iterator<GradPixelType> img_hessian_it(steepest_hess);
     Mat::ConstIterator<GradPixelType> grad_x_it(grad_x);
     Mat::ConstIterator<GradPixelType> grad_y_it(grad_y);
-    Mat::Iterator<TransformElementType> transf_jacobian_it(transform_jacobian);
+    Mat::Iterator<GradPixelType> transf_jacobian_it(transform_jacobian);
 
     ///
     // Compute image hessian
@@ -260,21 +293,18 @@ void generate_transformed_img_hessian(const Mat& grad_x,
         for (int x = 0; x < grad_x.cols; ++x) {
             ///
             // Generate transform jacobian
-            TransformClass::jacobian_origin(
-                static_cast<TransformElementType>(x),
-                static_cast<TransformElementType>(y),
-                transform_jacobian);
+            TransformClass::jacobian_origin(static_cast<GradPixelType>(x),
+                                            static_cast<GradPixelType>(y),
+                                            transform_jacobian);
 
             ///
             // Generate transform hessians
-            TransformClass::hessian_x_origin(
-                static_cast<TransformElementType>(x),
-                static_cast<TransformElementType>(y),
-                transform_hessian_x);
-            TransformClass::hessian_y_origin(
-                static_cast<TransformElementType>(x),
-                static_cast<TransformElementType>(y),
-                transform_hessian_y);
+            TransformClass::hessian_x_origin(static_cast<GradPixelType>(x),
+                                             static_cast<GradPixelType>(y),
+                                             transform_hessian_x);
+            TransformClass::hessian_y_origin(static_cast<GradPixelType>(x),
+                                             static_cast<GradPixelType>(y),
+                                             transform_hessian_y);
 
             ///
             // Compute pixel output value, which is a hessian matrix in itself
@@ -289,9 +319,9 @@ void generate_transformed_img_hessian(const Mat& grad_x,
             Eigen::Map<HessianMatType> pixel_hessian(&img_hessian_it(y, x, 0));
 
             Eigen::Map<HessianMatType> transf_hessian_x_mat(
-                static_cast<HessianPixelType*>(transform_hessian_x.data));
+                static_cast<GradPixelType*>(transform_hessian_x.data));
             Eigen::Map<HessianMatType> transf_hessian_y_mat(
-                static_cast<HessianPixelType*>(transform_hessian_y.data));
+                static_cast<GradPixelType*>(transform_hessian_y.data));
 
             pixel_hessian = steepest_x_col * transform_x_row +
                             steepest_y_col * transform_y_row +
@@ -305,7 +335,8 @@ void generate_transformed_img_hessian(const Mat& grad_x,
 
 void generate_mi_space(const std::string& file_name, const Mat& source)
 {
-    using PixelType = float;
+    using BinningMethod = BSpline4;
+    using PixelType     = float;
 
     // Open output file
     std::ofstream file_handle;
@@ -368,7 +399,7 @@ void generate_mi_space(const std::string& file_name, const Mat& source)
                 output_bb,
                 transformed_img,
                 transformed_mask);
-            double mi = mutual_information<PixelType>(
+            double mi = mutual_information<PixelType, BinningMethod>(
                 cropped_img, transformed_img, transformed_mask);
 
             file_handle << mi << " ";
@@ -482,11 +513,11 @@ void test_steepest_descent_imgs(const Mat& source)
         source, ImageDerivativeAxis::dY, grad_y);
 
     Mat steepest_img;
-    generate_steepest_descent_imgs<GradPixelType,
-                                   HomographyTransform<float>,
-                                   float>(grad_x, grad_y, steepest_img);
+    generate_steepest_gradient<GradPixelType,
+                               HomographyTransform<GradPixelType>>(
+        grad_x, grad_y, steepest_img);
 
-    visualize_steepest_descent_imgs(steepest_img);
+    visualize_steepest_gradient(steepest_img);
 
     return;
 }
@@ -556,9 +587,10 @@ void generate_mi_derivative_space(const std::string& file_name,
 {
     using PixelType           = float;
     using GradPixelType       = float;
-    using TransformClass      = HomographyTransform<float>;
+    using TransformClass      = HomographyTransform<GradPixelType>;
     using DerivativeMethod    = DerivativeNaive<1>;
     const int gradient_border = DerivativeMethod::border_crop_size();
+    using BinningMethod       = BSpline4;
 
     // Open output file
     std::ofstream file_handle;
@@ -627,7 +659,7 @@ void generate_mi_derivative_space(const std::string& file_name,
 
     // Generate steepest descent image
     Mat steepest_destination;
-    generate_steepest_descent_imgs<GradPixelType, TransformClass, float>(
+    generate_steepest_gradient<GradPixelType, TransformClass>(
         grad_x_small, grad_y_small, steepest_destination);
 
     Mat gradient;
@@ -667,7 +699,10 @@ void generate_mi_derivative_space(const std::string& file_name,
             local_source,
             local_mask);
 
-        mutual_information_gradient<HomographyTransform<float>>(
+        mutual_information_gradient<PixelType,
+                                    GradPixelType,
+                                    BinningMethod,
+                                    HomographyTransform<float>>(
             local_destination,
             local_steepest,
             local_source,
@@ -690,12 +725,11 @@ void generate_mi_hessian_space(const std::string& file_name,
                                const Mat& source,
                                const Mat& destination)
 {
-    using PixelType             = float;
-    using GradPixelType         = float;
-    using TransformClass        = HomographyTransform<float>;
-    using TransformImgDerivType = float;
-    using BinningMethod         = BSpline4;
-    using DerivativeMethod      = DerivativeNaive<1>;
+    using PixelType        = float;
+    using GradPixelType    = float;
+    using TransformClass   = HomographyTransform<GradPixelType>;
+    using BinningMethod    = BSpline4;
+    using DerivativeMethod = DerivativeNaive<1>;
 
     const int gradient_border = DerivativeMethod::border_crop_size();
 
@@ -838,22 +872,18 @@ void generate_mi_hessian_space(const std::string& file_name,
 
     // Generate steepest descent image
     Mat steepest_grad_dst;
-    generate_steepest_descent_imgs<GradPixelType,
-                                   TransformClass,
-                                   TransformImgDerivType>(
+    generate_steepest_gradient<GradPixelType, TransformClass>(
         grad_x_small, grad_y_small, steepest_grad_dst);
 
     // Generate transformed image hessian
     Mat steepest_hess_dst;
-    generate_transformed_img_hessian<GradPixelType,
-                                     TransformClass,
-                                     TransformImgDerivType>(grad_x_small,
-                                                            grad_y_small,
-                                                            grad_xx_small,
-                                                            grad_xy_small,
-                                                            grad_yx_small,
-                                                            grad_yy_small,
-                                                            steepest_hess_dst);
+    generate_steepest_hessian<GradPixelType, TransformClass>(grad_x_small,
+                                                             grad_y_small,
+                                                             grad_xx_small,
+                                                             grad_xy_small,
+                                                             grad_yx_small,
+                                                             grad_yy_small,
+                                                             steepest_hess_dst);
 
     Mat hessian;
     hessian.create<float>(TransformClass::number_parameters,
@@ -904,19 +934,23 @@ void generate_mi_hessian_space(const std::string& file_name,
                             BinningMethod,
                             TransformClass,
                             PositiveMaskIterator,
-                            Mat::ConstIterator<MaskType>>(local_destination,
-                                                          {},
-                                                          local_steepest_grad,
-                                                          local_source,
-                                                          local_mask,
-                                                          histogram_r_sum,
-                                                          histogram_rt_sum,
-                                                          histogram_r,
-                                                          histogram_rt,
-                                                          histogram_rt_grad);
+                            Mat::ConstIterator<MaskPixelType>>(
+            local_destination,
+            {},
+            local_steepest_grad,
+            local_source,
+            local_mask,
+            histogram_r_sum,
+            histogram_rt_sum,
+            histogram_r,
+            histogram_rt,
+            histogram_rt_grad);
 
         // Compute MI Hessian
-        mutual_information_hessian<HomographyTransform<float>>(
+        mutual_information_hessian<PixelType,
+                                   GradPixelType,
+                                   BinningMethod,
+                                   HomographyTransform<float>>(
             local_destination,
             local_steepest_grad,
             local_steepest_hess,
@@ -1056,12 +1090,14 @@ bool register_translation(const Mat& source,
         });
         */
 
+    /*
     small_homog.for_each<Mat::Iterator<uint8_t>>(
         [](Mat::Iterator<uint8_t>& it, int y, int x, int c) {
             it(y, x, c) =
                 static_cast<uint8_t>((x * 255) /
                                      ((it.m.cols - 1) * 8) * 8);
         });
+        */
 
     gaussian_blur<uint8_t, uint8_t, 1>(small_homog, 5, 2.f, source_blurred);
 

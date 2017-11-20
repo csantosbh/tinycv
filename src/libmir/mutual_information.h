@@ -4,7 +4,7 @@
 #include "histogram.h"
 #include "mat.h"
 
-using MaskType = uint8_t;
+using MaskPixelType = uint8_t;
 
 /**
  * Mask iterator for the case where we know that all pixels are valid
@@ -25,48 +25,56 @@ struct PositiveMaskIterator
     }
 };
 
-template <typename PixelType, typename MaskIteratorA, typename MaskIteratorB>
-double mutual_information_impl(const Mat& image_a,
-                               const MaskIteratorA& it_mask_a,
-                               const Mat& image_b,
-                               const MaskIteratorB& it_mask_b)
+template <typename PixelType,
+          typename BinningMethod,
+          typename MaskIteratorA,
+          typename MaskIteratorB>
+double mutual_information_impl(const Mat& img_reference,
+                               const MaskIteratorA& mask_reference_it,
+                               const Mat& img_tracked,
+                               const MaskIteratorB& mask_tracked_it)
 {
-    using BinningMethod = BSpline4;
+    const int number_hist_bins =
+        HistogramConfig::num_total_bins<BinningMethod>();
 
-    assert(image_a.rows == image_b.rows);
-    assert(image_a.cols == image_b.cols);
+    // This function works for single channel images only
+    assert(img_reference.channels() == 1);
+    assert(img_tracked.channels() == 1);
 
-    assert(image_a.type() == image_b.type());
+    // The input images must have the same dimensions
+    assert(img_reference.rows == img_tracked.rows);
+    assert(img_reference.cols == img_tracked.cols);
 
-    assert(it_mask_a.is_mask_of(image_a));
-    assert(it_mask_b.is_mask_of(image_b));
+    // The reference and tracked images must be of the same type
+    assert(img_reference.type() == img_tracked.type());
 
+    // The input masks must be valid
+    assert(mask_reference_it.is_mask_of(img_reference));
+    assert(mask_tracked_it.is_mask_of(img_tracked));
 
-    Mat histogram_a;
-    Mat histogram_b;
-    Mat histogram_ab;
+    Mat histogram_r;
+    Mat histogram_t;
+    Mat histogram_rt;
     joint_image_histogram<PixelType,
                           BinningMethod,
                           MaskIteratorA,
-                          MaskIteratorB>(image_a,
-                                         it_mask_a,
-                                         image_b,
-                                         it_mask_b,
-                                         histogram_a,
-                                         histogram_b,
-                                         histogram_ab);
-
-    const int number_practical_bins = static_cast<int>(histogram_a.cols);
+                          MaskIteratorB>(img_reference,
+                                         mask_reference_it,
+                                         img_tracked,
+                                         mask_tracked_it,
+                                         histogram_r,
+                                         histogram_t,
+                                         histogram_rt);
 
     // Histogram iterators
-    Mat::ConstIterator<float> hist_a_it(histogram_a);
-    Mat::ConstIterator<float> hist_b_it(histogram_b);
-    Mat::ConstIterator<float> hist_ab_it(histogram_ab);
+    Mat::ConstIterator<float> hist_r_it(histogram_r);
+    Mat::ConstIterator<float> hist_t_it(histogram_t);
+    Mat::ConstIterator<float> hist_rt_it(histogram_rt);
 
     double mi_summation = 0.0;
-    for (int i = 0; i < number_practical_bins; ++i) {
-        for (int j = 0; j < number_practical_bins; ++j) {
-            const float prob_ij = hist_ab_it(i, j, 0);
+    for (int i = 0; i < number_hist_bins; ++i) {
+        for (int j = 0; j < number_hist_bins; ++j) {
+            const float prob_ij = hist_rt_it(i, j, 0);
 
             /*
              * We know that P(a=j,b=i) < P(a=j) and P(a=j,b=i) < P(b=i), since
@@ -97,13 +105,13 @@ double mutual_information_impl(const Mat& image_a,
              * converges to 0.
              */
             if (prob_ij > 0.0) {
-                double prob_aj = hist_a_it(0, j, 0);
-                double prob_bi = hist_b_it(0, i, 0);
+                double prob_rj = hist_r_it(0, j, 0);
+                double prob_ti = hist_t_it(0, i, 0);
 
-                assert(prob_aj > 0.f);
-                assert(prob_bi > 0.f);
+                assert(prob_rj > 0.f);
+                assert(prob_ti > 0.f);
 
-                double logterm = std::log(prob_ij / (prob_aj * prob_bi));
+                double logterm = std::log(prob_ij / (prob_rj * prob_ti));
                 mi_summation += prob_ij * logterm;
             }
 
@@ -115,81 +123,106 @@ double mutual_information_impl(const Mat& image_a,
 }
 
 /**
- * Compute the mutual information between image_a and image_b
+ * Compute the mutual information between img_reference and img_tracked
  */
-template <typename PixelType>
-double mutual_information(const Mat& image_a, const Mat& image_b)
+template <typename PixelType, typename BinningMethod>
+double mutual_information(const Mat& img_reference, const Mat& img_tracked)
 {
     return mutual_information_impl<PixelType,
+                                   BinningMethod,
                                    PositiveMaskIterator,
                                    PositiveMaskIterator>(
-        image_a, {}, image_b, {});
+        img_reference, {}, img_tracked, {});
 }
 
 /**
  * Compute the mutual information between image_a and image_b
  *
- * @param it_mask_b  Arbitrary mask for determining valid pixels of the image_b.
- *                   A pixel is valid iff its corresponding mask pixel is not 0.
+ * @param mask_tracked_it  Arbitrary mask for determining valid pixels of the
+ *                         img_tracked. A pixel is valid iff its corresponding
+ *                         mask pixel is not 0.
  */
-template <typename PixelType>
-double mutual_information(const Mat& image_a,
-                          const Mat& image_b,
-                          const Mat::ConstIterator<MaskType>& it_mask_b)
+template <typename PixelType, typename BinningMethod>
+double
+mutual_information(const Mat& img_reference,
+                   const Mat& img_tracked,
+                   const Mat::ConstIterator<MaskPixelType>& mask_tracked_it)
 {
     return mutual_information_impl<PixelType,
+                                   BinningMethod,
                                    PositiveMaskIterator,
-                                   Mat::ConstIterator<MaskType>>(
-        image_a, {}, image_b, it_mask_b);
+                                   Mat::ConstIterator<MaskPixelType>>(
+        img_reference, {}, img_tracked, mask_tracked_it);
 }
 
 /**
- * Compute the mutual information between image_a and image_b
+ * Compute the mutual information between image_r and image_t
  *
- * @param it_mask_a  Arbitrary mask for determining valid pixels of the image_a.
- *                   A pixel is valid iff its corresponding mask pixel is not 0.
- * @param it_mask_b  Arbitrary mask for determining valid pixels of the image_b.
- *                   A pixel is valid iff its corresponding mask pixel is not 0.
+ * @param mask_reference_it  Arbitrary mask for determining valid pixels of the
+ *                           img_reference. A pixel is valid iff its
+ *                           corresponding mask pixel is not 0.
+ * @param mask_tracked_it  Arbitrary mask for determining valid pixels of the
+ *                         img_tracked. A pixel is valid iff its corresponding
+ *                         mask pixel is not 0.
  */
-template <typename PixelType>
-double mutual_information(const Mat& image_a,
-                          const Mat::ConstIterator<PixelType>& it_mask_a,
-                          const Mat& image_b,
-                          const Mat::ConstIterator<PixelType>& it_mask_b)
+template <typename PixelType, typename BinningMethod>
+double
+mutual_information(const Mat& img_reference,
+                   const Mat::ConstIterator<PixelType>& mask_reference_it,
+                   const Mat& img_tracked,
+                   const Mat::ConstIterator<PixelType>& mask_tracked_it)
 {
     return mutual_information_impl<PixelType,
-                                   Mat::ConstIterator<MaskType>,
-                                   Mat::ConstIterator<MaskType>>(
-        image_a, it_mask_a, image_b, it_mask_b);
+                                   BinningMethod,
+                                   Mat::ConstIterator<MaskPixelType>,
+                                   Mat::ConstIterator<MaskPixelType>>(
+        img_reference, mask_reference_it, img_tracked, mask_tracked_it);
 }
 
-template <typename TransformClass>
-void mutual_information_gradient(const Mat& reference,
-                                 const Mat& steepest_img,
-                                 const Mat& tracked,
-                                 const Mat& tracked_mask,
-                                 Mat& gradient)
+/**
+ * Compute the gradient of the mutual information
+ */
+template <typename PixelType,
+          typename GradPixelType,
+          typename BinningMethod,
+          typename TransformClass>
+void mutual_information_gradient(const Mat& img_reference,
+                                 const Mat& steepest_grad_r,
+                                 const Mat& img_tracked,
+                                 const Mat& mask_tracked,
+                                 Mat& mi_gradient)
 {
-    using BinningMethod = BSpline4;
-    using PixelType     = float;
-    using GradientType  = float;
+    const int number_hist_bins =
+        HistogramConfig::num_total_bins<BinningMethod>();
+    const int number_transform_params = TransformClass::number_parameters;
 
-    assert(reference.rows == tracked.rows);
-    assert(reference.cols == tracked.cols);
+    // The input images must have the same dimensions
+    assert(img_reference.rows == img_tracked.rows);
+    assert(img_reference.cols == img_tracked.cols);
 
-    assert(reference.type() == tracked.type());
+    // The steepest images must have the same dimensions as the input images
+    assert(img_reference.cols == steepest_grad_r.cols);
+    assert(img_reference.rows == steepest_grad_r.rows);
 
-    assert(tracked_mask.is_mask_of(tracked));
+    // The reference and tracked images must be of the same type
+    assert(img_reference.type() == Mat::get_type_enum<PixelType>());
+    assert(img_reference.type() == img_tracked.type());
 
-    if (gradient.empty()) {
-        gradient.create<GradientType>(1, TransformClass::number_parameters, 1);
+    // The images derived from the gradient must be of the same type
+    assert(steepest_grad_r.type() == Mat::get_type_enum<GradPixelType>());
+
+    // The input mask must be valid
+    assert(mask_tracked.is_mask_of(img_tracked));
+
+    if (mi_gradient.empty()) {
+        mi_gradient.create<GradPixelType>(1, number_transform_params, 1);
     } else {
-        assert(gradient.rows == 1);
-        assert(gradient.cols == TransformClass::number_parameters);
-        assert(gradient.channels() == 1);
+        assert(mi_gradient.rows == 1);
+        assert(mi_gradient.cols == number_transform_params);
+        assert(mi_gradient.channels() == 1);
     }
 
-    gradient.fill<GradientType>(0);
+    mi_gradient.fill<GradPixelType>(0);
 
     Mat histogram_r;
     Mat histogram_rt;
@@ -198,33 +231,30 @@ void mutual_information_gradient(const Mat& reference,
     double histogram_r_sum;
     double histogram_rt_sum;
     joint_hist_gradient<PixelType,
-                        float,
+                        GradPixelType,
                         BinningMethod,
                         TransformClass,
                         PositiveMaskIterator,
-                        Mat::ConstIterator<MaskType>>(reference,
-                                                      {},
-                                                      steepest_img,
-                                                      tracked,
-                                                      tracked_mask,
-                                                      histogram_r_sum,
-                                                      histogram_rt_sum,
-                                                      histogram_r,
-                                                      histogram_rt,
-                                                      histogram_rt_grad);
-
-    const int number_practical_bins = static_cast<int>(histogram_r.cols);
-    const int number_parameters     = histogram_rt_grad.channels();
+                        Mat::ConstIterator<MaskPixelType>>(img_reference,
+                                                           {},
+                                                           steepest_grad_r,
+                                                           img_tracked,
+                                                           mask_tracked,
+                                                           histogram_r_sum,
+                                                           histogram_rt_sum,
+                                                           histogram_r,
+                                                           histogram_rt,
+                                                           histogram_rt_grad);
 
     Mat::ConstIterator<float> hist_r_it(histogram_r);
     Mat::ConstIterator<float> hist_rt_it(histogram_rt);
     Mat::ConstIterator<float> hist_rt_grad_it(histogram_rt_grad);
 
-    Mat::Iterator<float> gradient_it(gradient);
+    Mat::Iterator<float> gradient_it(mi_gradient);
 
-    for (int i = 0; i < number_practical_bins; ++i) {
-        for (int j = 0; j < number_practical_bins; ++j) {
-            for (int param = 0; param < number_parameters; ++param) {
+    for (int i = 0; i < number_hist_bins; ++i) {
+        for (int j = 0; j < number_hist_bins; ++j) {
+            for (int param = 0; param < number_transform_params; ++param) {
                 float grad_at_ij = hist_rt_grad_it(i, j, param);
                 float hist_at_ij = hist_rt_it(i, j, 0);
                 float hist_at_j  = hist_r_it(0, j, 0);
@@ -246,79 +276,92 @@ void mutual_information_gradient(const Mat& reference,
     return;
 }
 
-template <typename TransformClass>
-void mutual_information_hessian(const Mat& reference,
-                                const Mat& steepest_ref_grad,
-                                const Mat& steepest_ref_hess,
-                                const Mat& tracked,
-                                const Mat& tracked_mask,
+template <typename PixelType,
+          typename GradPixelType,
+          typename BinningMethod,
+          typename TransformClass>
+void mutual_information_hessian(const Mat& img_reference,
+                                const Mat& steepest_grad_r,
+                                const Mat& steepest_hess_r,
+                                const Mat& img_tracked,
+                                const Mat& mask_tracked,
                                 const Mat& histogram_r,
                                 const Mat& histogram_rt,
                                 const Mat& histogram_rt_grad,
                                 const double histogram_r_sum,
                                 const double histogram_rt_sum,
-                                Mat& hessian)
+                                Mat& mi_hessian)
 {
-    const int number_practical_bins = static_cast<int>(histogram_r.cols);
-    const int transform_params      = TransformClass::number_parameters;
-
-    using HessianPixelType = float;
-    using BinningMethod    = BSpline4;
-    using PixelType        = float;
-    using SteepestType     = float;
+    const int number_hist_bins =
+        HistogramConfig::num_total_bins<BinningMethod>();
+    const int number_transform_params = TransformClass::number_parameters;
 
     // clang-format off
-    using SteepestColType  = Eigen::Matrix<HessianPixelType,
-                                           transform_params,
+    using SteepestColType  = Eigen::Matrix<GradPixelType,
+                                           number_transform_params,
                                            1>;
-    using SteepestRowType = Eigen::Matrix<HessianPixelType,
+    using SteepestRowType = Eigen::Matrix<GradPixelType,
                                            1,
-                                           transform_params>;
-    using HessianMatType   = Eigen::Matrix<HessianPixelType,
-                                           transform_params,
-                                           transform_params,
+                                           number_transform_params>;
+    using HessianMatType   = Eigen::Matrix<GradPixelType,
+                                           number_transform_params,
+                                           number_transform_params,
                                            Eigen::RowMajor>;
     // clang-format on
 
+    // This function works for single channel images only
+    assert(img_reference.channels() == 1);
+    assert(img_tracked.channels() == 1);
+
     // The input images must have the same dimensions
-    assert(reference.cols == tracked.cols);
-    assert(reference.rows == tracked.rows);
+    assert(img_reference.cols == img_tracked.cols);
+    assert(img_reference.rows == img_tracked.rows);
 
     // The steepest images must have the same dimensions as the input images
-    assert(reference.cols == steepest_ref_grad.cols);
-    assert(reference.rows == steepest_ref_grad.rows);
-    assert(reference.cols == steepest_ref_hess.cols);
-    assert(reference.rows == steepest_ref_hess.rows);
+    assert(img_reference.cols == steepest_grad_r.cols);
+    assert(img_reference.rows == steepest_grad_r.rows);
+    assert(img_reference.cols == steepest_hess_r.cols);
+    assert(img_reference.rows == steepest_hess_r.rows);
 
     // The steepest images must have the right amount of channels
-    assert(steepest_ref_grad.channels() == transform_params);
-    assert(steepest_ref_hess.channels() == transform_params * transform_params);
+    assert(steepest_grad_r.channels() == number_transform_params);
+    assert(steepest_hess_r.channels() ==
+           number_transform_params * number_transform_params);
 
     // The input mask must be valid
-    assert(tracked_mask.is_mask_of(tracked));
+    assert(mask_tracked.is_mask_of(img_tracked));
 
     // The histograms must have the right number of bins
-    assert(histogram_r.rows == 1 && histogram_r.cols == number_practical_bins);
-    assert(histogram_rt.rows == number_practical_bins &&
-           histogram_rt.cols == number_practical_bins);
-    assert(histogram_rt_grad.rows == number_practical_bins &&
-           histogram_rt_grad.cols == number_practical_bins);
+    assert(histogram_r.rows == 1 && histogram_r.cols == number_hist_bins);
+    assert(histogram_rt.rows == number_hist_bins &&
+           histogram_rt.cols == number_hist_bins);
+    assert(histogram_rt_grad.rows == number_hist_bins &&
+           histogram_rt_grad.cols == number_hist_bins);
 
     // The histograms must have the correct number of channels
     assert(histogram_r.channels() == 1);
     assert(histogram_rt.channels() == 1);
-    assert(histogram_rt_grad.channels() == transform_params);
+    assert(histogram_rt_grad.channels() == number_transform_params);
+
+    // The reference and tracked images must be of the same type
+    assert(img_reference.type() == img_tracked.type());
+
+    // The images derived from the gradient must be of the same type
+    assert(steepest_grad_r.type() == Mat::get_type_enum<GradPixelType>());
+    assert(steepest_grad_r.type() == steepest_hess_r.type());
 
     // Allocate output if it hasn't been allocated yet
-    if (hessian.empty()) {
-        hessian.create<HessianPixelType>(transform_params, transform_params, 1);
+    if (mi_hessian.empty()) {
+        mi_hessian.create<GradPixelType>(
+            number_transform_params, number_transform_params, 1);
     } else {
-        assert(hessian.cols == transform_params &&
-               hessian.rows == transform_params && hessian.channels() == 1);
+        assert(mi_hessian.cols == number_transform_params &&
+               mi_hessian.rows == number_transform_params &&
+               mi_hessian.channels() == 1);
     }
 
     // Initialize hessian
-    hessian.fill<HessianPixelType>(0);
+    mi_hessian.fill<GradPixelType>(0);
 
     // Create histogram iterators
     Mat::ConstIterator<float> histogram_r_it(histogram_r);
@@ -326,42 +369,44 @@ void mutual_information_hessian(const Mat& reference,
     Mat::ConstIterator<float> histogram_rt_grad_it(histogram_rt_grad);
 
     // Create output iterator
-    Mat::Iterator<HessianPixelType> hessian_it(hessian);
+    Mat::Iterator<GradPixelType> hessian_it(mi_hessian);
 
-    // Create joint histogram hessian and reference histogram gradient
+    // Create hessian of the joint histogram and the gradient of the marginal
+    // reference histogram
     Mat histogram_rt_hess;
     Mat histogram_r_grad;
 
     joint_hist_hessian<PixelType,
-                       SteepestType,
+                       GradPixelType,
                        BinningMethod,
                        TransformClass,
                        PositiveMaskIterator,
-                       Mat::ConstIterator<MaskType>>(
-        reference,
+                       Mat::ConstIterator<MaskPixelType>>(
+        img_reference,
         {},
-        steepest_ref_grad,
-        steepest_ref_hess,
-        tracked,
-        Mat::ConstIterator<MaskType>(tracked_mask),
+        steepest_grad_r,
+        steepest_hess_r,
+        img_tracked,
+        Mat::ConstIterator<MaskPixelType>(mask_tracked),
         histogram_r_sum,
         histogram_rt_sum,
         histogram_r_grad,
         histogram_rt_hess);
 
-    assert(histogram_rt_hess.rows == number_practical_bins &&
-           histogram_rt_hess.cols == number_practical_bins);
-    assert(histogram_rt_hess.channels() == transform_params * transform_params);
+    assert(histogram_rt_hess.rows == number_hist_bins &&
+           histogram_rt_hess.cols == number_hist_bins);
+    assert(histogram_rt_hess.channels() ==
+           number_transform_params * number_transform_params);
 
     // Create iterators for joint hessian and ref gradient
-    Mat::Iterator<HessianPixelType> histogram_rt_hess_it(histogram_rt_hess);
-    Mat::ConstIterator<HessianPixelType> histogram_r_grad_it(histogram_r_grad);
+    Mat::Iterator<GradPixelType> histogram_rt_hess_it(histogram_rt_hess);
+    Mat::ConstIterator<GradPixelType> histogram_r_grad_it(histogram_r_grad);
 
     // Create Eigen support structures that don't depend on histogram bin
     Eigen::Map<HessianMatType> hessian_mat(&hessian_it(0, 0, 0));
 
-    for (int i = 0; i < number_practical_bins; ++i) {
-        for (int j = 0; j < number_practical_bins; j++) {
+    for (int i = 0; i < number_hist_bins; ++i) {
+        for (int j = 0; j < number_hist_bins; j++) {
             // Create Eigen support strucutres that depend on histogram bin
             Eigen::Map<const SteepestColType> histogram_rt_grad_col(
                 &histogram_rt_grad_it(i, j, 0));
