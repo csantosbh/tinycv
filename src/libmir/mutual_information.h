@@ -64,32 +64,32 @@ double mutual_information_impl(const Mat& image_a,
     Mat::ConstIterator<float> hist_ab_it(histogram_ab);
 
     double mi_summation = 0.0;
-    for (int j = 0; j < number_practical_bins; ++j) {
-        for (int i = 0; i < number_practical_bins; ++i) {
-            double prob_ij = hist_ab_it(i, j, 0);
+    for (int i = 0; i < number_practical_bins; ++i) {
+        for (int j = 0; j < number_practical_bins; ++j) {
+            const float prob_ij = hist_ab_it(i, j, 0);
 
             /*
-             * We know that P(a=i,b=j) < P(a=i) and P(a=i,b=j) < P(b=j), since
-             * (a=i,b=j) is a subset of both (a=i) and (b=j) events.
+             * We know that P(a=j,b=i) < P(a=j) and P(a=j,b=i) < P(b=i), since
+             * (a=j,b=i) is a subset of both (a=j) and (b=i) events.
              *
-             * Therefore, if P(a=i)=0 or P(b=j)=0, then P(a=i,b=j)=0.
+             * Therefore, if P(a=j)=0 or P(b=i)=0, then P(a=j,b=i)=0.
              *
-             * Now consider P(a=i,b=j)=0. Then, the MI term
+             * Now consider P(a=j,b=i)=0. Then, the MI term
              *
-             *  MI(i,j) = P(a=i,b=j) * log(P(a=i,b=j) / (P(a=i) * P(b=j)))
+             *  MI(j,i) = P(a=j,b=i) * log(P(a=j,b=i) / (P(a=j) * P(b=i)))
              *
              * must evaluate to 0.
              *
              * Proof:
-             * Let k = P(a=i,b=j), l=P(a=i) and m=P(b=j), for the sake of
+             * Let k = P(a=j,b=i), l=P(a=j) and m=P(b=i), for the sake of
              * simplicity. Then:
              *
-             *  MI(i,j) = lim{k->0+} k * log(k/(l * m)).
+             *  MI(j,i) = lim{k->0+} k * log(k/(l * m)).
              *
-             * If l > 0 and m > 0, then it is trivial to see that MI(i,j) = 0.
+             * If l > 0 and m > 0, then it is trivial to see that MI(j,i) = 0.
              * If, however, both l and m are zero, we have
              *
-             *  MI(i,j) = lim{k->0+} k * log(k/(k * k))
+             *  MI(j,i) = lim{k->0+} k * log(k/(k * k))
              *          = lim{k->0+} k * log(k) - k * log(k) - k * log(k)
              *
              * Each term k * log(k) can be written as log(k) / (1/k), so one can
@@ -97,10 +97,13 @@ double mutual_information_impl(const Mat& image_a,
              * converges to 0.
              */
             if (prob_ij > 0.0) {
-                double prob_ai = hist_a_it(0, i, 0);
-                double prob_bj = hist_b_it(0, j, 0);
+                double prob_aj = hist_a_it(0, j, 0);
+                double prob_bi = hist_b_it(0, i, 0);
 
-                double logterm = std::log(prob_ij / (prob_ai * prob_bj));
+                assert(prob_aj > 0.f);
+                assert(prob_bi > 0.f);
+
+                double logterm = std::log(prob_ij / (prob_aj * prob_bi));
                 mi_summation += prob_ij * logterm;
             }
 

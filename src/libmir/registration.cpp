@@ -17,7 +17,7 @@
 
 
 const float TEST_ALPHA_RANGE   = 10.f;
-const float TEST_DELTA_ALPHA   = 0.1f;
+const float TEST_DELTA_ALPHA   = 0.25f;
 const int TEST_ALPHA_MODEL_IDX = 2;
 
 void visualize_steepest_descent_imgs(const Mat& steepest_img)
@@ -1056,7 +1056,23 @@ bool register_translation(const Mat& source,
         });
         */
 
+    small_homog.for_each<Mat::Iterator<uint8_t>>(
+        [](Mat::Iterator<uint8_t>& it, int y, int x, int c) {
+            it(y, x, c) =
+                static_cast<uint8_t>((x * 255) /
+                                     ((it.m.cols - 1) * 8) * 8);
+        });
+
     gaussian_blur<uint8_t, uint8_t, 1>(small_homog, 5, 2.f, source_blurred);
+
+    /*
+    source_blurred.for_each<Mat::Iterator<uint8_t>>(
+        [](Mat::Iterator<uint8_t>& it, int y, int x, int c) {
+            it(y, x, c) =
+                static_cast<uint8_t>(static_cast<float>(x) /
+                                     static_cast<float>(it.m.cols - 1) * 255.f);
+        });
+        */
 
     // Preprocess image
     Mat blurred_normalized =

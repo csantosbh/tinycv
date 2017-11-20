@@ -1,5 +1,5 @@
 %close all;
-clear;
+%clear;
 
 model_param=2;
 
