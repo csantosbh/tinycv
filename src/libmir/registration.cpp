@@ -17,7 +17,7 @@
 
 
 const float TEST_ALPHA_RANGE   = 10.f;
-const float TEST_DELTA_ALPHA   = 0.05f;
+const float TEST_DELTA_ALPHA   = 0.1f;
 const int TEST_ALPHA_MODEL_IDX = 2;
 
 void visualize_steepest_descent_imgs(const Mat& steepest_img)
@@ -554,10 +554,10 @@ void generate_mi_derivative_space(const std::string& file_name,
                                   const Mat& source,
                                   const Mat& destination)
 {
-    using PixelType        = float;
-    using GradPixelType    = float;
-    using TransformClass   = HomographyTransform<float>;
-    using DerivativeMethod = DerivativeNaive<1>;
+    using PixelType           = float;
+    using GradPixelType       = float;
+    using TransformClass      = HomographyTransform<float>;
+    using DerivativeMethod    = DerivativeNaive<1>;
     const int gradient_border = DerivativeMethod::border_crop_size();
 
     // Open output file
@@ -728,7 +728,8 @@ void generate_mi_hessian_space(const std::string& file_name,
     DerivativeMethod::derivative<GradPixelType, GradPixelType>(
         grad_x, ImageDerivativeAxis::dY, grad_xy);
 
-    // TODO grad_xy = grad_yx. No need for replication
+    // Note that grad_xy = grad_yx, so Newton's method implementation can take
+    // advantage of that for optimization purposes
     DerivativeMethod::derivative<GradPixelType, GradPixelType>(
         grad_y, ImageDerivativeAxis::dX, grad_yx);
 
@@ -901,6 +902,7 @@ void generate_mi_hessian_space(const std::string& file_name,
         joint_hist_gradient<PixelType,
                             GradPixelType,
                             BinningMethod,
+                            TransformClass,
                             PositiveMaskIterator,
                             Mat::ConstIterator<MaskType>>(local_destination,
                                                           {},
@@ -1058,7 +1060,8 @@ bool register_translation(const Mat& source,
 
     // Preprocess image
     Mat blurred_normalized =
-        image_scale_histogram<uint8_t, float>(source_blurred);
+        image_remap_histogram<uint8_t, float, PositiveMaskIterator>(
+            source_blurred, {});
 
     // test_image_derivative(source);
 

@@ -3,6 +3,13 @@
 
 #include <algorithm>
 
+template<typename PointType>
+struct Point
+{
+    PointType x;
+    PointType y;
+};
+
 template <typename T>
 T clamp(T value, T lowest, T highest)
 {

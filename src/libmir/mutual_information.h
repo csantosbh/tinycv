@@ -197,6 +197,7 @@ void mutual_information_gradient(const Mat& reference,
     joint_hist_gradient<PixelType,
                         float,
                         BinningMethod,
+                        TransformClass,
                         PositiveMaskIterator,
                         Mat::ConstIterator<MaskType>>(reference,
                                                       {},
@@ -276,7 +277,6 @@ void mutual_information_hessian(const Mat& reference,
                                            Eigen::RowMajor>;
     // clang-format on
 
-    // TODO asserts
     // The input images must have the same dimensions
     assert(reference.cols == tracked.cols);
     assert(reference.rows == tracked.rows);

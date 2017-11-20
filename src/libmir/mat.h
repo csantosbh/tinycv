@@ -4,22 +4,9 @@
 #include <cassert>
 #include <memory>
 
+#include "template_utils.h"
+
 struct BoundingBox;
-
-// TODO move somewhere else
-// Used to prevent automatic template argument deduction
-template <typename T>
-struct dependent_type
-{
-    using type = T;
-};
-
-template<typename PointType>
-struct Point
-{
-    PointType x;
-    PointType y;
-};
 
 class Mat
 {
