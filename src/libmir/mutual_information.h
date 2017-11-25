@@ -279,12 +279,13 @@ void mutual_information_gradient(const Mat& img_reference,
 template <typename PixelType,
           typename GradPixelType,
           typename BinningMethod,
-          typename TransformClass>
+          typename TransformClass,
+          typename MaskIteratorT>
 void mutual_information_hessian(const Mat& img_reference,
                                 const Mat& steepest_grad_r,
                                 const Mat& steepest_hess_r,
                                 const Mat& img_tracked,
-                                const Mat& mask_tracked,
+                                const MaskIteratorT& mask_tracked_it,
                                 const Mat& histogram_r,
                                 const Mat& histogram_rt,
                                 const Mat& histogram_rt_grad,
@@ -329,7 +330,7 @@ void mutual_information_hessian(const Mat& img_reference,
            number_transform_params * number_transform_params);
 
     // The input mask must be valid
-    assert(mask_tracked.is_mask_of(img_tracked));
+    assert(mask_tracked_it.is_mask_of(img_tracked));
 
     // The histograms must have the right number of bins
     assert(histogram_r.rows == 1 && histogram_r.cols == number_hist_bins);
@@ -381,13 +382,13 @@ void mutual_information_hessian(const Mat& img_reference,
                        BinningMethod,
                        TransformClass,
                        PositiveMaskIterator,
-                       Mat::ConstIterator<MaskPixelType>>(
+                       MaskIteratorT>(
         img_reference,
         {},
         steepest_grad_r,
         steepest_hess_r,
         img_tracked,
-        Mat::ConstIterator<MaskPixelType>(mask_tracked),
+        mask_tracked_it,
         histogram_r_sum,
         histogram_rt_sum,
         histogram_r_grad,

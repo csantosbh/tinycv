@@ -30,9 +30,10 @@ set(MIRTool_SourceFiles
 # Include folders
 set(LibMIR_IncludeDirs
     ${EIGEN3_INCLUDE_DIR}
+    src/
 )
 set(MIRTool_IncludeDirs
-    ${EIGEN3_INCLUDE_DIR}
+    ${LibMIR_IncludeDirs}
 )
 
 # Target binaries

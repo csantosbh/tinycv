@@ -3,7 +3,10 @@
 
 #include <array>
 
+#include <Eigen/Eigen>
+
 #include "mat.h"
+#include "math.h"
 
 struct BoundingBox
 {
@@ -29,8 +32,42 @@ struct BoundingBox
     std::array<float, 2> right_bottom;
 };
 
+template <typename TransformClass>
 BoundingBox bounding_box_transform(const BoundingBox& bb,
-                                   const float* homography_ptr);
+                                   const Mat& transform_parameters)
+{
+    // clang-format off
+    const std::array<Point<float>, 4> image_corners{{
+        {bb.left_top[0],     bb.left_top[1]},
+        {bb.right_bottom[0], bb.left_top[1]},
+        {bb.right_bottom[0], bb.right_bottom[1]},
+        {bb.left_top[0],     bb.right_bottom[1]}
+    }};
+
+    BoundingBox output_bb{
+        {std::numeric_limits<float>::max(),
+                    std::numeric_limits<float>::max()},
+        {std::numeric_limits<float>::lowest(),
+                    std::numeric_limits<float>::lowest()}
+    };
+    // clang-format on
+
+    for (size_t i = 0; i < image_corners.size(); ++i) {
+        const Point<float> transformed_corner =
+            TransformClass::transform(image_corners[i], transform_parameters);
+
+        // Update bounding box
+        const float* transformed_ptr = transformed_corner.ptr();
+        for (int c = 0; c < 2; ++c) {
+            output_bb.left_top[c] =
+                std::min(output_bb.left_top[c], transformed_ptr[c]);
+            output_bb.right_bottom[c] =
+                std::max(output_bb.right_bottom[c], transformed_ptr[c]);
+        }
+    }
+
+    return output_bb;
+}
 
 BoundingBox bounding_box_intersect(const BoundingBox& bb_a,
                                    const BoundingBox& bb_b);

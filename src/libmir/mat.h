@@ -2,6 +2,7 @@
 #define _LIBMIR_MAT_H_
 
 #include <cassert>
+#include <cstring>
 #include <memory>
 
 #include "template_utils.h"
@@ -62,6 +63,22 @@ class Mat
                 }
             }
         }
+
+        return *this;
+    }
+
+    Mat& operator<<(const Mat& from)
+    {
+        assert(!empty());
+        assert(!from.empty());
+        assert(from.rows == rows);
+        assert(from.cols == cols);
+        assert(from.channels() == channels());
+        assert(from.type() == type());
+
+        memcpy(data,
+               from.data,
+               from.rows * from.cols * from.channels() * from.sizeof_type());
 
         return *this;
     }
@@ -156,6 +173,43 @@ class Mat
         } else if (std::is_same<PixelType, uint32_t>::value) {
             return Type::UINT32;
         }
+    }
+
+    size_t sizeof_type() const
+    {
+        // TODO assert valid matrix
+
+        size_t result;
+
+        switch (type()) {
+        case Type::UINT8:
+            result = sizeof(uint8_t);
+            break;
+        case Type::UINT16:
+            result = sizeof(uint16_t);
+            break;
+        case Type::INT16:
+            result = sizeof(int16_t);
+            break;
+        case Type::INT32:
+            result = sizeof(int32_t);
+            break;
+        case Type::FLOAT32:
+            result = sizeof(float);
+            break;
+        case Type::FLOAT64:
+            result = sizeof(double);
+            break;
+        case Type::UINT32:
+            result = sizeof(uint32_t);
+            break;
+        default:
+            result = 1;
+
+            assert(!"Invalid pixel type");
+        }
+
+        return result;
     }
 
     bool is_mask_of(const Mat& image) const

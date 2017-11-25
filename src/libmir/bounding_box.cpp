@@ -1,5 +1,3 @@
-#include <Eigen/Eigen>
-
 #include "bounding_box.h"
 #include "mat.h"
 
@@ -59,47 +57,6 @@ int BoundingBox::ceiling_width() const
 int BoundingBox::ceiling_height() const
 {
     return static_cast<int>(std::ceil(right_bottom[1] - left_top[1] + 1.f));
-}
-
-BoundingBox bounding_box_transform(const BoundingBox& bb,
-                                   const float* homography_ptr)
-{
-    using Eigen::Vector3f;
-    using std::vector;
-
-    Eigen::Map<const Matrix3fRowMajor> homography(homography_ptr);
-
-    // clang-format off
-    const vector<Vector3f> image_corner{
-        {bb.left_top[0],     bb.left_top[1],     1.f},
-        {bb.right_bottom[0], bb.left_top[1],     1.f},
-        {bb.right_bottom[0], bb.right_bottom[1], 1.f},
-        {bb.left_top[0],     bb.right_bottom[1], 1.f}
-    };
-
-    BoundingBox output_bb{
-        {std::numeric_limits<float>::max(),
-         std::numeric_limits<float>::max()},
-        {std::numeric_limits<float>::lowest(),
-         std::numeric_limits<float>::lowest()}
-    };
-    // clang-format on
-
-    vector<Vector3f> transformed_corners(4);
-    for (size_t i = 0; i < image_corner.size(); ++i) {
-        transformed_corners[i] = homography * image_corner[i];
-        transformed_corners[i] /= transformed_corners[i][2];
-
-        // Update bounding box
-        for (int c = 0; c < 2; ++c) {
-            output_bb.left_top[c] =
-                std::min(output_bb.left_top[c], transformed_corners[i][c]);
-            output_bb.right_bottom[c] =
-                std::max(output_bb.right_bottom[c], transformed_corners[i][c]);
-        }
-    }
-
-    return output_bb;
 }
 
 BoundingBox bounding_box_intersect(const BoundingBox& bb_a,

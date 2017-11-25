@@ -2,10 +2,10 @@
 #include <memory>
 
 #include <Eigen/Eigen>
-
 #define STB_IMAGE_IMPLEMENTATION
-#include "../libmir/registration.h"
 #include <stb/stb_image.h>
+
+#include "../libmir/registration.h"
 
 using stbibuf = std::unique_ptr<uint8_t, std::function<void(uint8_t*)>>;
 
@@ -30,11 +30,11 @@ int main(int argc, char** argv)
     int channels;
 
     stbibuf stb_source;
-    load_stbibuf(stb_source, "../images/house.jpg", width, height, channels);
+    load_stbibuf(stb_source, "/tmp/graffitti/img1.png", width, height, channels);
 
     stbibuf stb_destination;
     load_stbibuf(
-        stb_destination, "../images/house.jpg", width, height, channels);
+        stb_destination, "/tmp/graffitti/img4.png", width, height, channels);
 
     Mat source;
     source.create_from_buffer<uint8_t>(
@@ -45,7 +45,7 @@ int main(int argc, char** argv)
         stb_destination.get(), height, width, channels, width * channels);
 
     Eigen::Vector2f translation;
-    register_translation(source, destination, translation.data());
+    register_translation(source, destination);
 
     return 0;
 }

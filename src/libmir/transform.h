@@ -5,6 +5,7 @@
 
 #include <Eigen/Eigen>
 
+#include "bounding_box.h"
 #include "mat.h"
 #include "math.h"
 
@@ -18,9 +19,10 @@ using InterpolationFunctor =
 
 template <typename PixelType,
           int channels,
+          typename TransformClass,
           InterpolationFunctor<PixelType> interpolation_method>
 void image_transform(const Mat& image,
-                     const float* homography_ptr,
+                     const Mat& transform_parameters,
                      const BoundingBox& output_bb,
                      Mat& output_image,
                      Mat& output_mask)
@@ -32,81 +34,89 @@ void image_transform(const Mat& image,
     assert(image.channels() == channels);
 
     // Compute bounding box of the transformed image by transforming its corners
-    Eigen::Map<const Matrix3fRowMajor> homography(homography_ptr);
-
     int output_width  = output_bb.ceiling_width();
     int output_height = output_bb.ceiling_height();
 
+    // TODO use MaskType instead of uint8_t
+    // TODO only create if it doesn't exist
+    // Create and initialize output image
     output_image.create<PixelType>(output_height, output_width, channels);
     output_mask.create<uint8_t>(output_height, output_width, 1);
-    memset(output_image.data, 0, output_width * output_height * channels);
+#ifndef NDEBUG
+    output_image.fill<PixelType>(0);
+#endif
 
-    Matrix3fRowMajor homography_inv = homography.inverse();
+    Mat transform_params_inv;
+    TransformClass::inverse(transform_parameters, transform_params_inv);
 
-    // Converts from output space to transformed bounding box space
-    Matrix3fRowMajor transf_bb_pivot;
+    // Transform from destination coordinates to transformed world coordinates,
+    // then back to source coordinates
+
+    Mat composed_transform;
     // clang-format off
-    transf_bb_pivot << 1.f, 0.f, std::floor(output_bb.left_top[0]),
-                       0.f, 1.f, std::floor(output_bb.left_top[1]),
-                       0.f, 0.f, 1.f;
+    TransformClass::compose(
+        transform_params_inv, Point<float>{
+            std::floor(output_bb.left_top[0]),
+            std::floor(output_bb.left_top[1])
+    }, composed_transform);
     // clang-format on
-    homography_inv = homography_inv * transf_bb_pivot;
 
+    // Create image iterators
     Mat::ConstIterator<PixelType> img_it(image);
     Mat::Iterator<PixelType> transf_img_it(output_image);
     Mat::Iterator<uint8_t> mask_it(output_mask);
 
-    float in_image_cols_f = static_cast<float>(image.cols);
-    float in_image_rows_f = static_cast<float>(image.rows);
+    // Image limits
+    const float in_image_cols_f = static_cast<float>(image.cols);
+    const float in_image_rows_f = static_cast<float>(image.rows);
 
-    float last_input_col = in_image_cols_f - 1.f;
-    float last_input_row = in_image_rows_f - 1.f;
+    const float last_input_col = in_image_cols_f - 1.f;
+    const float last_input_row = in_image_rows_f - 1.f;
 
     for (int y_buff = 0; y_buff < output_image.rows; ++y_buff) {
         for (int x_buff = 0; x_buff < output_image.cols; ++x_buff) {
-            Vector3f transformed_coord =
-                homography_inv * Vector3f(static_cast<float>(x_buff),
-                                          static_cast<float>(y_buff),
-                                          1.f);
-            // Normalize homogeneous coordinates
-            transformed_coord /= transformed_coord[2];
+            // TODO use asserts
+            // Transform coordinates to find source interpolation coords
+            Point<float> transformed_coord = TransformClass::transform(
+                {static_cast<float>(x_buff), static_cast<float>(y_buff)},
+                composed_transform);
 
-            if (transformed_coord[0] >= 0.f &&
-                transformed_coord[0] <= last_input_col &&
-                transformed_coord[1] >= 0.f &&
-                transformed_coord[1] <= last_input_row) {
+            if (transformed_coord.x >= 0.f &&
+                transformed_coord.x <= last_input_col &&
+                transformed_coord.y >= 0.f &&
+                transformed_coord.y <= last_input_row) {
 
                 interpolation_method(img_it,
-                                     transformed_coord.data(),
+                                     transformed_coord.ptr(),
                                      &transf_img_it(y_buff, x_buff, 0));
 
                 mask_it(y_buff, x_buff, 0) = 255;
-            } else if (transformed_coord[0] > -1.f &&
-                       transformed_coord[0] < in_image_cols_f &&
-                       transformed_coord[1] > -1.f &&
-                       transformed_coord[1] < in_image_rows_f) {
+            } else if (transformed_coord.x > -1.f &&
+                       transformed_coord.x < in_image_cols_f &&
+                       transformed_coord.y > -1.f &&
+                       transformed_coord.y < in_image_rows_f) {
                 ///
                 // Handle image borders by smoothly decreasing the value of the
                 // mask at those regions
                 float clamped_coords[] = {
-                    clamp(transformed_coord[0], 0.f, last_input_col),
-                    clamp(transformed_coord[1], 0.f, last_input_row)};
+                    clamp(transformed_coord.x, 0.f, last_input_col),
+                    clamp(transformed_coord.y, 0.f, last_input_row)};
                 interpolation_method(
                     img_it, clamped_coords, &transf_img_it(y_buff, x_buff, 0));
 
                 float mask_alpha_x = 1.f;
                 float mask_alpha_y = 1.f;
 
-                if (transformed_coord[0] < 0.f) {
-                    mask_alpha_x = 1.f + transformed_coord[0];
-                } else if (transformed_coord[0] > last_input_col) {
-                    mask_alpha_x = in_image_cols_f - transformed_coord[0];
+                if (transformed_coord.x < 0.f) {
+                    mask_alpha_x = 1.f + transformed_coord.x;
+                } else if (transformed_coord.x > last_input_col) {
+                    mask_alpha_x = in_image_cols_f - transformed_coord.x;
                 }
 
-                if (transformed_coord[1] < 0.f) {
-                    mask_alpha_y = 1.f + transformed_coord[1];
-                } else if (transformed_coord[1] > last_input_row) {
-                    mask_alpha_y = in_image_rows_f - transformed_coord[1];
+                if (transformed_coord.y < 0.f) {
+                    mask_alpha_y = 1.f + transformed_coord.y;
+                } else if (transformed_coord.y > last_input_row) {
+                    mask_alpha_y = in_image_rows_f - transformed_coord.y;
                 }
 
                 mask_it(y_buff, x_buff, 0) =
@@ -249,9 +259,182 @@ void gaussian_blur(const Mat& image,
 template <typename TransformElementType>
 struct AffineTransform
 {
-    using ElementType = TransformElementType;
+    using ElementType                  = TransformElementType;
+    static const int number_parameters = 6;
 
-    void jacobian_origin(const ElementType x, ElementType y, Mat& output)
+    static Point<ElementType> transform(const Point<ElementType>& x,
+                                        const Mat& parameters)
+    {
+        assert(!parameters.empty());
+        assert(parameters.rows == 1);
+        assert(parameters.cols == number_parameters);
+        assert(parameters.channels() == 1);
+        assert(parameters.type() == Mat::get_type_enum<ElementType>());
+
+        Mat::ConstIterator<ElementType> p_it(parameters);
+
+        // clang-format off
+        return {
+            (1 + p_it(0, 0, 0)) * x.x + p_it(0, 1, 0) * x.y + p_it(0, 2, 0),
+            p_it(0, 3, 0) * x.x + (1 + p_it(0, 4, 0)) * x.y + p_it(0, 5, 0)
+        };
+        // clang-format on
+    }
+
+    static void inverse(const Mat& parameters, Mat& inverted_parameters)
+    {
+        assert(!parameters.empty());
+        assert(parameters.rows == 1);
+        assert(parameters.cols == number_parameters);
+        assert(parameters.channels() == 1);
+        assert(parameters.type() == Mat::get_type_enum<ElementType>());
+
+        if (inverted_parameters.empty()) {
+            inverted_parameters.create<ElementType>(1, number_parameters, 1);
+        } else {
+            assert(!inverted_parameters.empty());
+            assert(inverted_parameters.rows == 1);
+            assert(inverted_parameters.cols == number_parameters);
+            assert(inverted_parameters.channels() == 1);
+            assert(inverted_parameters.type() ==
+                   Mat::get_type_enum<ElementType>());
+        }
+
+        using Matrix3RowMajor =
+            Eigen::Matrix<ElementType, 3, 3, Eigen::RowMajor>;
+
+        Mat::ConstIterator<ElementType> params_it(parameters);
+        Matrix3RowMajor params_mat;
+        // clang-format off
+        params_mat <<
+          1 + params_it(0, 0, 0),     params_it(0, 1, 0), params_it(0, 2, 0),
+              params_it(0, 3, 0), 1 + params_it(0, 4, 0), params_it(0, 5, 0),
+                               0,                      0,                  1;
+        // clang-format on
+
+        Matrix3RowMajor inv_mat = params_mat.inverse();
+
+        // clang-format off
+        inverted_parameters << std::initializer_list<ElementType>{
+          -1 + inv_mat(0, 0),      inv_mat(0, 1), inv_mat(0, 2),
+               inv_mat(1, 0), -1 + inv_mat(1, 1), inv_mat(1, 2)
+        };
+        // clang-format on
+    }
+
+    static void compose(const Mat& outer_params,
+                        const Point<ElementType>& inner_translation_params,
+                        Mat& composed_params)
+    {
+        // TODO refactor with similar methods
+        using Matrix3RowMajor =
+            Eigen::Matrix<ElementType, 3, 3, Eigen::RowMajor>;
+
+        assert(!outer_params.empty());
+        assert(outer_params.rows == 1);
+        assert(outer_params.cols == number_parameters);
+        assert(outer_params.channels() == 1);
+        assert(outer_params.type() == Mat::get_type_enum<ElementType>());
+
+        if (composed_params.empty()) {
+            composed_params.create<ElementType>(1, number_parameters, 1);
+        } else {
+            assert(!composed_params.empty());
+            assert(composed_params.rows == 1);
+            assert(composed_params.cols == number_parameters);
+            assert(composed_params.channels() == 1);
+            assert(composed_params.type() == Mat::get_type_enum<ElementType>());
+        }
+
+        Matrix3RowMajor inner_mat;
+        // clang-format off
+        inner_mat << 1, 0, inner_translation_params.x,
+                     0, 1, inner_translation_params.y,
+                     0, 0, 1;
+        // clang-format on
+
+        // Create outer eigen matrix
+        Matrix3RowMajor outer_mat;
+        Mat::ConstIterator<ElementType> outer_it(outer_params);
+        // clang-format off
+        outer_mat <<
+          1 + outer_it(0, 0, 0),     outer_it(0, 1, 0), outer_it(0, 2, 0),
+              outer_it(0, 3, 0), 1 + outer_it(0, 4, 0), outer_it(0, 5, 0),
+                              0,                     0,                 1;
+        // clang-format on
+
+        Matrix3RowMajor composed_mat = outer_mat * inner_mat;
+
+        // Fill output parameter matrix
+        // clang-format off
+        composed_params << std::initializer_list<ElementType>{
+          -1 + composed_mat(0, 0),      composed_mat(0, 1), composed_mat(0, 2),
+               composed_mat(1, 0), -1 + composed_mat(1, 1), composed_mat(1, 2)
+        };
+        // clang-format on
+    }
+
+    static void compose(const Mat& outer_params,
+                        const Mat& inner_params,
+                        Mat& composed_params)
+    {
+        using Matrix3RowMajor =
+            Eigen::Matrix<ElementType, 3, 3, Eigen::RowMajor>;
+
+        assert(!outer_params.empty());
+        assert(outer_params.rows == 1);
+        assert(outer_params.cols == number_parameters);
+        assert(outer_params.channels() == 1);
+        assert(outer_params.type() == Mat::get_type_enum<ElementType>());
+
+        assert(!inner_params.empty());
+        assert(inner_params.rows == 1);
+        assert(inner_params.cols == number_parameters);
+        assert(inner_params.channels() == 1);
+        assert(inner_params.type() == Mat::get_type_enum<ElementType>());
+
+        if (composed_params.empty()) {
+            composed_params.create<ElementType>(1, number_parameters, 1);
+        } else {
+            assert(!composed_params.empty());
+            assert(composed_params.rows == 1);
+            assert(composed_params.cols == number_parameters);
+            assert(composed_params.channels() == 1);
+            assert(composed_params.type() == Mat::get_type_enum<ElementType>());
+        }
+
+        // Create inner eigen matrix
+        Matrix3RowMajor inner_mat;
+        Mat::ConstIterator<ElementType> inner_it(inner_params);
+        // clang-format off
+        inner_mat <<
+          1 + inner_it(0, 0, 0),     inner_it(0, 1, 0), inner_it(0, 2, 0),
+              inner_it(0, 3, 0), 1 + inner_it(0, 4, 0), inner_it(0, 5, 0),
+                              0,                     0,                 1;
+        // clang-format on
+
+        // Create outer eigen matrix
+        Matrix3RowMajor outer_mat;
+        Mat::ConstIterator<ElementType> outer_it(outer_params);
+        // clang-format off
+        outer_mat <<
+          1 + outer_it(0, 0, 0),     outer_it(0, 1, 0), outer_it(0, 2, 0),
+              outer_it(0, 3, 0), 1 + outer_it(0, 4, 0), outer_it(0, 5, 0),
+                              0,                     0,                 1;
+        // clang-format on
+
+        Matrix3RowMajor composed_mat = outer_mat * inner_mat;
+
+        // Fill output parameter matrix
+        // clang-format off
+        composed_params << std::initializer_list<ElementType>{
+          -1 + composed_mat(0, 0),      composed_mat(0, 1), composed_mat(0, 2),
+               composed_mat(1, 0), -1 + composed_mat(1, 1), composed_mat(1, 2),
+        };
+        // clang-format on
+    }
+
+    static void jacobian_origin(const ElementType x, ElementType y, Mat& output)
     {
         if (output.empty()) {
             output.create<ElementType>(2, 6, 1);
@@ -264,6 +447,46 @@ struct AffineTransform
         };
         // clang-format on
     }
+
+    static void hessian_x_origin(ElementType x, ElementType y, Mat& output)
+    {
+        assert(!output.empty());
+        assert(output.cols == number_parameters);
+        assert(output.cols == number_parameters);
+        assert(output.channels() == 1);
+        assert(output.type() == Mat::get_type_enum<ElementType>());
+
+        // clang-format off
+        output << std::initializer_list<ElementType>{
+            0,     0,  0, 0, 0, 0,
+            0,     0,  0, 0, 0, 0,
+            0,     0,  0, 0, 0, 0,
+            0,     0,  0, 0, 0, 0,
+            0,     0,  0, 0, 0, 0,
+            0,     0,  0, 0, 0, 0,
+        };
+        // clang-format on
+    }
+
+    static void hessian_y_origin(ElementType x, ElementType y, Mat& output)
+    {
+        assert(!output.empty());
+        assert(output.cols == number_parameters);
+        assert(output.cols == number_parameters);
+        assert(output.channels() == 1);
+        assert(output.type() == Mat::get_type_enum<ElementType>());
+
+        // clang-format off
+        output << std::initializer_list<ElementType>{
+            0, 0, 0,   0,   0,  0,
+            0, 0, 0,   0,   0,  0,
+            0, 0, 0,   0,   0,  0,
+            0, 0, 0,   0,   0,  0,
+            0, 0, 0,   0,   0,  0,
+            0, 0, 0,   0,   0,  0,
+        };
+        // clang-format on
+    }
 };
 
 template <typename TransformElementType>
@@ -272,12 +495,209 @@ struct HomographyTransform
     using ElementType                  = TransformElementType;
     static const int number_parameters = 8;
 
+    static Point<ElementType> transform(const Point<ElementType>& x,
+                                        const Mat& parameters)
+    {
+        assert(!parameters.empty());
+        assert(parameters.rows == 1);
+        assert(parameters.cols == number_parameters);
+        assert(parameters.channels() == 1);
+        assert(parameters.type() == Mat::get_type_enum<ElementType>());
+
+        Mat::ConstIterator<ElementType> p_it(parameters);
+
+        ElementType dividend = p_it(0, 6, 0) * x.x + p_it(0, 7, 0) * x.y + 1;
+
+        // clang-format off
+        return {
+            ((1 + p_it(0, 0, 0)) * x.x + p_it(0, 1, 0) * x.y + p_it(0, 2, 0)) /
+             dividend,
+            (p_it(0, 3, 0) * x.x + (1 + p_it(0, 4, 0)) * x.y + p_it(0, 5, 0)) /
+             dividend
+        };
+        // clang-format on
+    }
+
+    static void inverse(const Mat& parameters, Mat& inverted_parameters)
+    {
+        assert(!parameters.empty());
+        assert(parameters.rows == 1);
+        assert(parameters.cols == number_parameters);
+        assert(parameters.channels() == 1);
+        assert(parameters.type() == Mat::get_type_enum<ElementType>());
+
+        if (inverted_parameters.empty()) {
+            inverted_parameters.create<ElementType>(1, number_parameters, 1);
+        } else {
+            assert(!inverted_parameters.empty());
+            assert(inverted_parameters.rows == 1);
+            assert(inverted_parameters.cols == number_parameters);
+            assert(inverted_parameters.channels() == 1);
+            assert(inverted_parameters.type() ==
+                   Mat::get_type_enum<ElementType>());
+        }
+
+        using Matrix3RowMajor =
+            Eigen::Matrix<ElementType, 3, 3, Eigen::RowMajor>;
+
+        Mat::ConstIterator<ElementType> params_it(parameters);
+        Matrix3RowMajor params_mat;
+        // clang-format off
+        params_mat <<
+          1 + params_it(0, 0, 0),     params_it(0, 1, 0), params_it(0, 2, 0),
+              params_it(0, 3, 0), 1 + params_it(0, 4, 0), params_it(0, 5, 0),
+              params_it(0, 6, 0),     params_it(0, 7, 0),                  1;
+        // clang-format on
+
+        Matrix3RowMajor inv_mat = params_mat.inverse();
+
+        // clang-format off
+        inverted_parameters << std::initializer_list<ElementType>{
+          -1 + inv_mat(0, 0),      inv_mat(0, 1), inv_mat(0, 2),
+               inv_mat(1, 0), -1 + inv_mat(1, 1), inv_mat(1, 2),
+               inv_mat(2, 0),      inv_mat(2, 1)
+        };
+        // clang-format on
+    }
+
+    /**
+     * Compose the transformation defined by outer_params with the translational
+     * transformation given by the inner_translation_params.
+     *
+     * Equivalent to:
+     *  w(x, composed_params) <- w(w(x, inner_params), outer_params)
+     */
+    static void compose(const Mat& outer_params,
+                        const Point<ElementType>& inner_translation_params,
+                        Mat& composed_params)
+    {
+        // TODO refactor with similar methods
+        using Matrix3RowMajor =
+            Eigen::Matrix<ElementType, 3, 3, Eigen::RowMajor>;
+
+        assert(!outer_params.empty());
+        assert(outer_params.rows == 1);
+        assert(outer_params.cols == number_parameters);
+        assert(outer_params.channels() == 1);
+        assert(outer_params.type() == Mat::get_type_enum<ElementType>());
+
+        if (composed_params.empty()) {
+            composed_params.create<ElementType>(1, number_parameters, 1);
+        } else {
+            assert(!composed_params.empty());
+            assert(composed_params.rows == 1);
+            assert(composed_params.cols == number_parameters);
+            assert(composed_params.channels() == 1);
+            assert(composed_params.type() == Mat::get_type_enum<ElementType>());
+        }
+
+        Matrix3RowMajor inner_mat;
+        // clang-format off
+        inner_mat << 1, 0, inner_translation_params.x,
+                     0, 1, inner_translation_params.y,
+                     0, 0, 1;
+        // clang-format on
+
+        // Create outer eigen matrix
+        Matrix3RowMajor outer_mat;
+        Mat::ConstIterator<ElementType> outer_it(outer_params);
+        // clang-format off
+        outer_mat <<
+          1 + outer_it(0, 0, 0),     outer_it(0, 1, 0), outer_it(0, 2, 0),
+              outer_it(0, 3, 0), 1 + outer_it(0, 4, 0), outer_it(0, 5, 0),
+              outer_it(0, 6, 0),     outer_it(0, 7, 0), 1;
+        // clang-format on
+
+        Matrix3RowMajor composed_mat = outer_mat * inner_mat;
+
+        // Fill output parameter matrix
+        // clang-format off
+        composed_params << std::initializer_list<ElementType>{
+          -1 + composed_mat(0, 0),      composed_mat(0, 1), composed_mat(0, 2),
+               composed_mat(1, 0), -1 + composed_mat(1, 1), composed_mat(1, 2),
+               composed_mat(2, 0),      composed_mat(2, 1)
+        };
+        // clang-format on
+    }
+
+    /**
+     * Compose the transformation defined by outer_params with the
+     * transformation given by the inner_params.
+     *
+     * Equivalent to:
+     *  w(x, composed_params) <- w(w(x, inner_params), outer_params)
+     */
+    static void compose(const Mat& outer_params,
+                        const Mat& inner_params,
+                        Mat& composed_params)
+    {
+        using Matrix3RowMajor =
+            Eigen::Matrix<ElementType, 3, 3, Eigen::RowMajor>;
+
+        assert(!outer_params.empty());
+        assert(outer_params.rows == 1);
+        assert(outer_params.cols == number_parameters);
+        assert(outer_params.channels() == 1);
+        assert(outer_params.type() == Mat::get_type_enum<ElementType>());
+
+        assert(!inner_params.empty());
+        assert(inner_params.rows == 1);
+        assert(inner_params.cols == number_parameters);
+        assert(inner_params.channels() == 1);
+        assert(inner_params.type() == Mat::get_type_enum<ElementType>());
+
+        if (composed_params.empty()) {
+            composed_params.create<ElementType>(1, number_parameters, 1);
+        } else {
+            assert(!composed_params.empty());
+            assert(composed_params.rows == 1);
+            assert(composed_params.cols == number_parameters);
+            assert(composed_params.channels() == 1);
+            assert(composed_params.type() == Mat::get_type_enum<ElementType>());
+        }
+
+        // Create inner eigen matrix
+        Matrix3RowMajor inner_mat;
+        Mat::ConstIterator<ElementType> inner_it(inner_params);
+        // clang-format off
+        inner_mat <<
+          1 + inner_it(0, 0, 0),     inner_it(0, 1, 0), inner_it(0, 2, 0),
+              inner_it(0, 3, 0), 1 + inner_it(0, 4, 0), inner_it(0, 5, 0),
+              inner_it(0, 6, 0),     inner_it(0, 7, 0), 1;
+        // clang-format on
+
+        // Create outer eigen matrix
+        Matrix3RowMajor outer_mat;
+        Mat::ConstIterator<ElementType> outer_it(outer_params);
+        // clang-format off
+        outer_mat <<
+          1 + outer_it(0, 0, 0),     outer_it(0, 1, 0), outer_it(0, 2, 0),
+              outer_it(0, 3, 0), 1 + outer_it(0, 4, 0), outer_it(0, 5, 0),
+              outer_it(0, 6, 0),     outer_it(0, 7, 0), 1;
+        // clang-format on
+
+        Matrix3RowMajor composed_mat = outer_mat * inner_mat;
+
+        // Fill output parameter matrix
+        // clang-format off
+        composed_params << std::initializer_list<ElementType>{
+          -1 + composed_mat(0, 0),      composed_mat(0, 1), composed_mat(0, 2),
+               composed_mat(1, 0), -1 + composed_mat(1, 1), composed_mat(1, 2),
+               composed_mat(2, 0),      composed_mat(2, 1)
+        };
+        // clang-format on
+    }
+
     /**
      * Jacobian of the Homography transform w(coordinate, Dp) evaluated at Dp=0
      */
     static void jacobian_origin(ElementType x, ElementType y, Mat& output)
     {
         assert(!output.empty());
+        assert(output.rows == 2);
+        assert(output.cols == number_parameters);
+        assert(output.channels() == 1);
+        assert(output.type() == Mat::get_type_enum<ElementType>());
 
         const ElementType xy = x * y;
 
@@ -292,10 +712,10 @@ struct HomographyTransform
     static void hessian_x_origin(ElementType x, ElementType y, Mat& output)
     {
         assert(!output.empty());
-
         assert(output.cols == number_parameters);
-        assert(output.rows == number_parameters);
+        assert(output.cols == number_parameters);
         assert(output.channels() == 1);
+        assert(output.type() == Mat::get_type_enum<ElementType>());
 
         const ElementType xx = x * x;
         const ElementType yy = y * y;
@@ -318,6 +738,10 @@ struct HomographyTransform
     static void hessian_y_origin(ElementType x, ElementType y, Mat& output)
     {
         assert(!output.empty());
+        assert(output.cols == number_parameters);
+        assert(output.cols == number_parameters);
+        assert(output.channels() == 1);
+        assert(output.type() == Mat::get_type_enum<ElementType>());
 
         const ElementType xx = x * x;
         const ElementType yy = y * y;

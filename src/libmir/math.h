@@ -3,11 +3,16 @@
 
 #include <algorithm>
 
-template<typename PointType>
+template <typename PointType>
 struct Point
 {
     PointType x;
     PointType y;
+
+    const PointType* ptr() const
+    {
+        return reinterpret_cast<const PointType*>(this);
+    }
 };
 
 template <typename T>
