@@ -1,5 +1,5 @@
-#ifndef _LIBMIR_MUTUAL_INFORMATION_H_
-#define _LIBMIR_MUTUAL_INFORMATION_H_
+#ifndef _TINYCV_MUTUAL_INFORMATION_H_
+#define _TINYCV_MUTUAL_INFORMATION_H_
 
 #include "histogram.h"
 #include "mat.h"

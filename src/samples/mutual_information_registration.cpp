@@ -1,11 +1,10 @@
 #include <iostream>
 #include <memory>
 
-#include <Eigen/Eigen>
 #define STB_IMAGE_IMPLEMENTATION
-#include <stb/stb_image.h>
-
-#include "../libmir/registration.h"
+#include "tinycv/third_party/stb/stb_image.h"
+#include "tinycv/registration.h"
+#include "tinycv/tinycv.h"
 
 using stbibuf = std::unique_ptr<uint8_t, std::function<void(uint8_t*)>>;
 
@@ -44,7 +43,6 @@ int main(int argc, char** argv)
     destination.create_from_buffer<uint8_t>(
         stb_destination.get(), height, width, channels, width * channels);
 
-    Eigen::Vector2f translation;
     register_translation(source, destination);
 
     return 0;

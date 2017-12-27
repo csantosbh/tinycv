@@ -1,5 +1,5 @@
-#ifndef _LIBMIR_DERIVATIVE_H_
-#define _LIBMIR_DERIVATIVE_H_
+#ifndef _TINYCV_DERIVATIVE_H_
+#define _TINYCV_DERIVATIVE_H_
 
 #include <cassert>
 

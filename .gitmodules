@@ -1,0 +1,3 @@
+[submodule "src/tinycv/third_party/eigen"]
+	path = src/tinycv/third_party/eigen
+	url = https://github.com/csantosbh/eigen.git

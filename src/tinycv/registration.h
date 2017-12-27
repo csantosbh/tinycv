@@ -1,5 +1,5 @@
-#ifndef _LIBMIR_REGISTRATION_H_
-#define _LIBMIR_REGISTRATION_H_
+#ifndef _TINYCV_REGISTRATION_H_
+#define _TINYCV_REGISTRATION_H_
 
 #include "derivative.h"
 #include "histogram.h"

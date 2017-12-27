@@ -1,3 +1,6 @@
+#ifndef _TINYCV_REGISTRATION_HPP_
+#define _TINYCV_REGISTRATION_HPP_
+
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -16,7 +19,7 @@
 #include "transform.h"
 
 
-bool register_translation(const Mat& reference, const Mat& tracked)
+inline bool register_translation(const Mat& reference, const Mat& tracked)
 {
     /*
     small_homog.for_each<Mat::Iterator<uint8_t>>(
@@ -96,3 +99,5 @@ bool register_translation(const Mat& reference, const Mat& tracked)
 
     return true;
 }
+
+#endif

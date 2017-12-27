@@ -1,9 +1,9 @@
-#ifndef _LIBMIR_BOUNDING_BOX_H_
-#define _LIBMIR_BOUNDING_BOX_H_
+#ifndef _TINYCV_BOUNDING_BOX_H_
+#define _TINYCV_BOUNDING_BOX_H_
 
 #include <array>
 
-#include <Eigen/Eigen>
+#include "third_party/eigen/Eigen"
 
 #include "mat.h"
 #include "math.h"

@@ -1,5 +1,5 @@
-#ifndef _LIBMIR_SAT_H_
-#define _LIBMIR_SAT_H_
+#ifndef _TINYCV_SAT_H_
+#define _TINYCV_SAT_H_
 
 #include "mat.h"
 

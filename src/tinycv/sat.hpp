@@ -1,3 +1,6 @@
+#ifndef _TINYCV_SAT_HPP_
+#define _TINYCV_SAT_HPP_
+
 #include <cassert>
 #include <cmath>
 #include <limits>
@@ -206,3 +209,5 @@ scale_from_sat<uint8_t, 3>(const Mat& source, float scale, Mat& destination);
 
 template void
 scale_from_sat<float, 1>(const Mat& source, float scale, Mat& destination);
+
+#endif

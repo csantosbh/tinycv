@@ -1,9 +1,9 @@
-#ifndef _LIBMIR_HISTOGRAM_H_
-#define _LIBMIR_HISTOGRAM_H_
+#ifndef _TINYCV_HISTOGRAM_H_
+#define _TINYCV_HISTOGRAM_H_
 
 #include <cmath>
 
-#include <Eigen/Eigen>
+#include "third_party/eigen/Eigen"
 
 #include "mat.h"
 

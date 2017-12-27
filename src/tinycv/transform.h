@@ -1,9 +1,9 @@
-#ifndef _LIBMIR_TRANSFORM_H_
-#define _LIBMIR_TRANSFORM_H_
+#ifndef _TINYCV_TRANSFORM_H_
+#define _TINYCV_TRANSFORM_H_
 
 #include <utility>
 
-#include <Eigen/Eigen>
+#include "third_party/eigen/Eigen"
 
 #include "bounding_box.h"
 #include "mat.h"

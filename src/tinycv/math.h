@@ -1,5 +1,5 @@
-#ifndef _LIBMIR_MATH_H_
-#define _LIBMIR_MATH_H_
+#ifndef _TINYCV_MATH_H_
+#define _TINYCV_MATH_H_
 
 #include <algorithm>
 

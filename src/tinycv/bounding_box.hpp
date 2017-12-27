@@ -1,3 +1,6 @@
+#ifndef _TINYCV_BOUNDING_BOX_HPP_
+#define _TINYCV_BOUNDING_BOX_HPP_
+
 #include "bounding_box.h"
 #include "mat.h"
 
@@ -70,3 +73,5 @@ BoundingBox bounding_box_intersect(const BoundingBox& bb_a,
                         {min(bb_a.right_bottom[0], bb_b.right_bottom[0]),
                          min(bb_a.right_bottom[1], bb_b.right_bottom[1])}});
 }
+
+#endif

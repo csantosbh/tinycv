@@ -1,5 +1,5 @@
-#ifndef _LIBMIR_INTERPOLATION_H_
-#define _LIBMIR_INTERPOLATION_H_
+#ifndef _TINYCV_INTERPOLATION_H_
+#define _TINYCV_INTERPOLATION_H_
 
 #include <algorithm>
 #include <cassert>

@@ -1,5 +1,5 @@
-#ifndef _LIBMIR_TEST_H_
-#define _LIBMIR_TEST_H_
+#ifndef _TINYCV_TEST_H_
+#define _TINYCV_TEST_H_
 
 #include <fstream>
 

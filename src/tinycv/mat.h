@@ -1,5 +1,5 @@
-#ifndef _LIBMIR_MAT_H_
-#define _LIBMIR_MAT_H_
+#ifndef _TINYCV_MAT_H_
+#define _TINYCV_MAT_H_
 
 #include <cassert>
 #include <cstring>
