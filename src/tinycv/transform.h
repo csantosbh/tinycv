@@ -518,6 +518,25 @@ struct HomographyTransform
         // clang-format on
     }
 
+    static void scale(const float factor_x, const float factor_y, Mat& parameters)
+    {
+        assert(!parameters.empty());
+        assert(parameters.rows == 1);
+        assert(parameters.cols == number_parameters);
+        assert(parameters.channels() == 1);
+        assert(parameters.type() == Mat::get_type_enum<ElementType>());
+
+        Mat::Iterator<ElementType> p_it(parameters);
+        p_it(0, 1, 0) *= factor_y / factor_x;
+        p_it(0, 2, 0) *= factor_x;
+
+        p_it(0, 3, 0) *= factor_x / factor_y;
+        p_it(0, 5, 0) *= factor_y;
+
+        p_it(0, 6, 0) *= 1.0f / factor_x;
+        p_it(0, 7, 0) *= 1.0f / factor_y;
+    }
+
     static void inverse(const Mat& parameters, Mat& inverted_parameters)
     {
         assert(!parameters.empty());

@@ -22,6 +22,8 @@ void bilinear_sample(const Mat::ConstIterator<PixelType>& it_img,
                      const float* coordinates,
                      PixelType* output)
 {
+    assert(it_img.m.type() == Mat::get_type_enum<PixelType>());
+
     float horiz_alpha      = coordinates[0] - std::floor(coordinates[0]);
     float vert_alpha       = coordinates[1] - std::floor(coordinates[1]);
     float horiz_alpha_comp = 1.f - horiz_alpha;

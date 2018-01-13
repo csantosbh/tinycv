@@ -63,19 +63,16 @@ void draw_line(const Point<int>& a,
                const std::array<PixelType, NumChannels>& color,
                Mat& canvas)
 {
-    assert(a.x >= 0 && a.y >= 0);
-    assert(a.x < canvas.rows && a.y < canvas.cols);
-
-    assert(b.x >= 0 && b.y >= 0);
-    assert(b.x < canvas.rows && b.y < canvas.cols);
-
     assert(canvas.data != nullptr);
 
     Mat::Iterator<PixelType> canvas_it(canvas);
     iterate_line<PixelType>(
         a, b, [&canvas_it, &color](const Point<int>& point) {
-            for (int channel = 0; channel < NumChannels; ++channel) {
-                canvas_it(point.y, point.x, channel) = color[channel];
+            if (point.x >= 0 && point.x < canvas_it.m.cols && point.y >= 0 &&
+                point.y < canvas_it.m.rows) {
+                for (int channel = 0; channel < NumChannels; ++channel) {
+                    canvas_it(point.y, point.x, channel) = color[channel];
+                }
             }
         });
 }

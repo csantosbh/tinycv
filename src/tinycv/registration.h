@@ -339,7 +339,7 @@ void preprocess_image(const Mat& input, Mat& output)
 
     assert(input.channels() == 1);
 
-    const float scale = 0.15f;
+    const float scale = 0.3f;
 
     Mat scale_params;
     scale_params.create<float>(1, 8, 1);

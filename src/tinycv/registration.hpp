@@ -98,6 +98,61 @@ inline bool register_homography(const Mat& reference,
     homography_derivative(xy, H, dh);
     */
 
+    const int gradient_border        = DerivativeNaive<1>::border_crop_size();
+    const int preprocess_blur_border = 6;
+    Mat crop_mat;
+    Mat uncrop_mat;
+    crop_mat.create<float>(1, 8, 1);
+    uncrop_mat.create<float>(1, 8, 1);
+
+    // clang-format off
+    crop_mat << std::initializer_list<float>{
+        0, 0, -2 * gradient_border - preprocess_blur_border,
+        0, 0, -2 * gradient_border - preprocess_blur_border,
+        0, 0
+    };
+    uncrop_mat << std::initializer_list<float>{
+        0, 0, 2 * gradient_border + preprocess_blur_border,
+        0, 0, 2 * gradient_border + preprocess_blur_border,
+        0, 0
+    };
+    // clang-format on
+
+    Mat transf_test;
+    Mat transf_mask;
+    image_transform<float,
+                    1,
+                    HomographyTransform<float>,
+                    bilinear_sample<float, 1>>(
+        tracked_preprocessed,
+        transform_homography,
+        BoundingBox(tracked_preprocessed),
+        transf_test,
+        transf_mask);
+
+    HomographyTransform<float>::compose(
+        transform_homography, crop_mat, transform_homography);
+    HomographyTransform<float>::compose(
+        uncrop_mat, transform_homography, transform_homography);
+
+    image_transform<float,
+                    1,
+                    HomographyTransform<float>,
+                    bilinear_sample<float, 1>>(
+        tracked_preprocessed,
+        transform_homography,
+        BoundingBox(tracked_preprocessed),
+        transf_test,
+        transf_mask);
+
+    HomographyTransform<float>::scale(
+        static_cast<float>(tracked.cols) /
+            static_cast<float>(tracked_preprocessed.cols +
+                               2 * preprocess_blur_border),
+        static_cast<float>(tracked.rows) /
+            static_cast<float>(tracked_preprocessed.rows +
+                               2 * preprocess_blur_border),
+        transform_homography);
     return true;
 }
 

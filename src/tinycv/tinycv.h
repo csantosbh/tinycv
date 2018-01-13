@@ -2,7 +2,7 @@
 #define _TINYCV_TINYCV_H_
 
 #include "registration.h"
-#include "third_party/stb/stb_image.h"
+#include "transform.h"
 #include "draw/line.h"
 
 #ifdef TINYCV_IMPLEMENTATION
