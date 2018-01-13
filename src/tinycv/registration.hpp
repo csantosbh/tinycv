@@ -19,7 +19,9 @@
 #include "transform.h"
 
 
-inline bool register_translation(const Mat& reference, const Mat& tracked)
+inline bool register_homography(const Mat& reference,
+                                const Mat& tracked,
+                                Mat& transform_homography)
 {
     /*
     small_homog.for_each<Mat::Iterator<uint8_t>>(
@@ -77,7 +79,6 @@ inline bool register_translation(const Mat& reference, const Mat& tracked)
         initial_guess_homog_it(0, i, 0) = transform_affine_it(0, i, 0);
     }
 
-    Mat transform_homography;
     register_impl<float, float, DerivativeNaive<1>, HomographyTransform<float>>(
         reference_preprocessed,
         tracked_preprocessed,

@@ -375,8 +375,6 @@ void preprocess_image(const Mat& input, Mat& output)
                                    PositiveMaskIterator>(output_blurred, {});
 }
 
-// TODO define output variable and return code
-// TransformClass = HomographyTransform<GradPixelType>;
 template <typename PixelType,
           typename GradPixelType,
           typename DerivativeMethod,
@@ -548,6 +546,8 @@ bool register_impl(const Mat& img_reference,
     return converged;
 }
 
-bool register_translation(const Mat& reference, const Mat& tracked);
+bool register_homography(const Mat& reference,
+                         const Mat& tracked,
+                         Mat& transform_homography);
 
 #endif

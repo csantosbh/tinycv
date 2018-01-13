@@ -22,13 +22,15 @@ class Mat
         UINT32  = 7
     };
 
+    enum class CopyMode { Shallow, Deep };
+
     void* data;
     int cols; // Width
     int rows; // Height
 
     Mat();
 
-    Mat(const Mat& other);
+    Mat(const Mat& other, CopyMode copy_mode = CopyMode::Shallow);
 
     Mat& operator=(const Mat& o);
 
@@ -297,8 +299,9 @@ class Mat
   private:
     struct
     {
-        size_t buf[2]; // buf[0] = width of the containing buffer*channels;
+        size_t buf[3]; // buf[0] = width of the containing buffer*channels;
                        // buf[1] = channels
+                       // buf[2] = sizeof(PixelType)
     } step;
 
     std::shared_ptr<void> data_mgr_;

@@ -14,7 +14,7 @@ Mat::Mat()
 {
 }
 
-Mat::Mat(const Mat& other)
+Mat::Mat(const Mat& other, CopyMode copy_mode)
     : data(other.data)
     , cols(other.cols)
     , rows(other.rows)
@@ -22,6 +22,15 @@ Mat::Mat(const Mat& other)
     , data_mgr_(other.data_mgr_)
     , flags_(other.flags_)
 {
+    if (copy_mode == CopyMode::Deep) {
+        const size_t buffer_length = rows * cols * channels() * step.buf[2];
+
+        data_mgr_ = shared_ptr<void>(new uint8_t[buffer_length],
+                                     [](void* buf) { delete[] buf; });
+        data      = data_mgr_.get();
+
+        memcpy(data, other.data, buffer_length);
+    }
 }
 
 Mat& Mat::operator=(const Mat& o)
@@ -81,7 +90,8 @@ Mat& Mat::create(int height, int width, int channels)
     rows = height;
     cols = width;
     step = {static_cast<size_t>(cols * channels),
-            static_cast<size_t>(channels)};
+            static_cast<size_t>(channels),
+            sizeof(T)};
 
     compute_flags<T>(channels);
 
@@ -102,7 +112,7 @@ Mat& Mat::create_from_buffer(PixelType* ptr,
     data = ptr;
     cols = width;
     rows = height;
-    step = {stride, static_cast<size_t>(channels)};
+    step = {stride, static_cast<size_t>(channels), sizeof(PixelType)};
 
     compute_flags<PixelType>(channels);
 
@@ -155,8 +165,7 @@ operator()(int row, int col, int chan);
 template SatType& Mat::Iterator<SatType>::
 operator()(int row, int col, int chan);
 
-template float& Mat::Iterator<float>::
-operator()(int row, int col, int chan);
+template float& Mat::Iterator<float>::operator()(int row, int col, int chan);
 
 template const uint8_t& Mat::ConstIterator<uint8_t>::
 operator()(int row, int col, int chan) const;
