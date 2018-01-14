@@ -25,7 +25,7 @@ inline bool register_homography(const Mat& reference,
     Mat reference_preprocessed;
     Mat tracked_preprocessed;
 
-    const float work_scale           = 0.3f;
+    const float work_scale           = 0.2f;
     const int preprocess_blur_border = 6;
     const float preprocess_blur_std  = 2.0;
 

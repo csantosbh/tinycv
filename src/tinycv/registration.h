@@ -389,7 +389,7 @@ bool register_impl(const Mat& img_reference,
                    const Mat& initial_guess,
                    Mat& composed_p)
 {
-    const int number_max_iterations   = 2500;
+    const int number_max_iterations   = 100;
     const int number_transform_params = TransformClass::number_parameters;
     const float convergence_threshold = 1e-4f;
 

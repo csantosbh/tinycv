@@ -249,7 +249,8 @@ void gaussian_blur(const Mat& image,
         kernel_summation += current_value;
     }
 
-    // TODO image might contain black border, but convolution is ignoring the mask
+    // TODO image might contain black border, but convolution is ignoring the
+    // mask
     float norm_factor = 1.f / (kernel_summation * kernel_summation);
     image_convolve<InputPixelType, OutputPixelType, channels>(
         image, kernel, kernel, norm_factor, output_image);
@@ -662,30 +663,10 @@ struct HomographyTransform
                                 const Mat& parameters,
                                 Mat& adjusted_parameters)
     {
-        Mat translation_mat;
-        Mat inv_translation_mat;
-
-        translation_mat.create<float>(1, number_parameters, 1);
-        inv_translation_mat.create<float>(1, number_parameters, 1);
-
-        // clang-format off
-        translation_mat << std::initializer_list<float>{
-            0, 0, translation.x,
-            0, 0, translation.y,
-            0, 0
-        };
-
-        inv_translation_mat << std::initializer_list<float>{
-            0, 0, -translation.x,
-            0, 0, -translation.y,
-            0, 0
-        };
-        // clang-format on
-
         HomographyTransform<float>::compose(
-            parameters, inv_translation_mat, adjusted_parameters);
+            parameters, -translation, adjusted_parameters);
         HomographyTransform<float>::compose(
-            translation_mat, adjusted_parameters, adjusted_parameters);
+            translation, adjusted_parameters, adjusted_parameters);
     }
 
     static void inverse(const Mat& parameters, Mat& inverted_parameters)
@@ -731,65 +712,53 @@ struct HomographyTransform
     }
 
     /**
+     * Compose the translational transformation given by the
+     * inner_translation_params with the transformation defined by outer_params.
+     *
+     * Equivalent to:
+     *  w(x, composed_params) <- w(w(x, outer_params), inner_translation_params)
+     */
+    static void compose(const Point<ElementType>& outer_translation_params,
+                        const Mat& inner_params,
+                        Mat& composed_params)
+    {
+        Mat outer_params;
+        outer_params.create<ElementType>(1, number_parameters, 1);
+
+        // clang-format off
+        outer_params << std::initializer_list<ElementType>{
+            0, 0, outer_translation_params.x,
+            0, 0, outer_translation_params.y,
+            0, 0
+        };
+        // clang-format on
+
+        compose(outer_params, inner_params, composed_params);
+    }
+
+    /**
      * Compose the transformation defined by outer_params with the translational
      * transformation given by the inner_translation_params.
      *
      * Equivalent to:
-     *  w(x, composed_params) <- w(w(x, inner_params), outer_params)
+     *  w(x, composed_params) <- w(w(x, inner_translation_params), outer_params)
      */
-    // TODO refactor with compose function below
     static void compose(const Mat& outer_params,
                         const Point<ElementType>& inner_translation_params,
                         Mat& composed_params)
     {
-        // TODO refactor with similar methods
-        using Matrix3RowMajor =
-            Eigen::Matrix<ElementType, 3, 3, Eigen::RowMajor>;
+        Mat inner_params;
+        inner_params.create<ElementType>(1, number_parameters, 1);
 
-        assert(!outer_params.empty());
-        assert(outer_params.rows == 1);
-        assert(outer_params.cols == number_parameters);
-        assert(outer_params.channels() == 1);
-        assert(outer_params.type() == Mat::get_type_enum<ElementType>());
-
-        if (composed_params.empty()) {
-            composed_params.create<ElementType>(1, number_parameters, 1);
-        } else {
-            assert(!composed_params.empty());
-            assert(composed_params.rows == 1);
-            assert(composed_params.cols == number_parameters);
-            assert(composed_params.channels() == 1);
-            assert(composed_params.type() == Mat::get_type_enum<ElementType>());
-        }
-
-        Matrix3RowMajor inner_mat;
         // clang-format off
-        inner_mat << 1, 0, inner_translation_params.x,
-                     0, 1, inner_translation_params.y,
-                     0, 0, 1;
-        // clang-format on
-
-        // Create outer eigen matrix
-        Matrix3RowMajor outer_mat;
-        Mat::ConstIterator<ElementType> outer_it(outer_params);
-        // clang-format off
-        outer_mat <<
-          1 + outer_it(0, 0, 0),     outer_it(0, 1, 0), outer_it(0, 2, 0),
-              outer_it(0, 3, 0), 1 + outer_it(0, 4, 0), outer_it(0, 5, 0),
-              outer_it(0, 6, 0),     outer_it(0, 7, 0), 1;
-        // clang-format on
-
-        Matrix3RowMajor composed_mat = outer_mat * inner_mat;
-        composed_mat *= 1.f / composed_mat(2, 2);
-
-        // Fill output parameter matrix
-        // clang-format off
-        composed_params << std::initializer_list<ElementType>{
-          -1 + composed_mat(0, 0),      composed_mat(0, 1), composed_mat(0, 2),
-               composed_mat(1, 0), -1 + composed_mat(1, 1), composed_mat(1, 2),
-               composed_mat(2, 0),      composed_mat(2, 1)
+        inner_params << std::initializer_list<ElementType>{
+            0, 0, inner_translation_params.x,
+            0, 0, inner_translation_params.y,
+            0, 0
         };
         // clang-format on
+
+        compose(outer_params, inner_params, composed_params);
     }
 
     /**
@@ -863,7 +832,7 @@ struct HomographyTransform
 
     static void to_homography(const Mat& parameters, Mat& output)
     {
-        if(output.empty()) {
+        if (output.empty()) {
             output.create<ElementType>(1, number_parameters, 1);
         }
 
@@ -884,7 +853,7 @@ struct HomographyTransform
 
     static void from_homography(const Mat& parameters, Mat& output)
     {
-        if(output.empty()) {
+        if (output.empty()) {
             output.create<ElementType>(1, number_parameters, 1);
         }
 

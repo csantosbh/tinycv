@@ -3,17 +3,23 @@
 
 #include <algorithm>
 
-template <typename PointType>
+template <typename PrimitiveType>
 struct Point
 {
-    PointType x;
-    PointType y;
+    PrimitiveType x;
+    PrimitiveType y;
 
-    const PointType* ptr() const
+    const PrimitiveType* ptr() const
     {
-        return reinterpret_cast<const PointType*>(this);
+        return reinterpret_cast<const PrimitiveType*>(this);
     }
 };
+
+template <typename PrimitiveType>
+Point<PrimitiveType> operator-(const Point<PrimitiveType>& point)
+{
+    return {-point.x, -point.y};
+}
 
 template <typename T>
 T clamp(T value, T lowest, T highest)
