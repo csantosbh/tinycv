@@ -332,14 +332,16 @@ void generate_self_ic_hessian(const Mat& img_reference,
 }
 
 template <typename InputPixelType>
-void preprocess_image(const Mat& input, Mat& output)
+void preprocess_image(const float scale,
+                      const int blur_kernel_border,
+                      const float blur_std,
+                      const Mat& input,
+                      Mat& output)
 {
     using TransformClass  = HomographyTransform<float>;
     using OutputPixelType = float;
 
     assert(input.channels() == 1);
-
-    const float scale = 0.3f;
 
     Mat scale_params;
     scale_params.create<float>(1, 8, 1);
@@ -368,7 +370,7 @@ void preprocess_image(const Mat& input, Mat& output)
 
     Mat output_blurred;
     gaussian_blur<InputPixelType, InputPixelType, 1>(
-        output_scaled, 6, 2.f, output_blurred);
+        output_scaled, blur_kernel_border, blur_std, output_blurred);
 
     output = image_remap_histogram<InputPixelType,
                                    OutputPixelType,
@@ -468,6 +470,24 @@ bool register_impl(const Mat& img_reference,
     // Initialize transform with initial guess
     composed_p << initial_guess;
 
+    // Convert initial guess from input image space to cropped work space
+    Mat composed_p_homog;
+
+    if (std::is_same<TransformClass, HomographyTransform<PixelType>>::value) {
+        composed_p_homog = composed_p;
+    } else {
+        TransformClass::to_homography(composed_p, composed_p_homog);
+    }
+
+    HomographyTransform<PixelType>::change_position(
+        {-2 * gradient_border, -2 * gradient_border},
+        composed_p_homog,
+        composed_p_homog);
+
+    if (!std::is_same<TransformClass, HomographyTransform<PixelType>>::value) {
+        TransformClass::from_homography(composed_p_homog, composed_p);
+    }
+
     // Mutual information gradient, to be computed at each iteration
     Mat mi_gradient;
 
@@ -543,6 +563,30 @@ bool register_impl(const Mat& img_reference,
                      static_cast<GradPixelType*>(composed_p.data))
                      .transpose()
               << std::endl;
+
+    if (converged) {
+        // Convert transform from cropped work space to un-cropped input image
+        // space
+        Mat composed_p_homog;
+
+        if (std::is_same<TransformClass,
+                         HomographyTransform<PixelType>>::value) {
+            composed_p_homog = composed_p;
+        } else {
+            TransformClass::to_homography(composed_p, composed_p_homog);
+        }
+
+        HomographyTransform<PixelType>::change_position(
+            {2 * gradient_border, 2 * gradient_border},
+            composed_p_homog,
+            composed_p_homog);
+
+        if (!std::is_same<TransformClass,
+                          HomographyTransform<PixelType>>::value) {
+            TransformClass::from_homography(composed_p_homog, composed_p);
+        }
+    }
+
     return converged;
 }
 

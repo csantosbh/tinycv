@@ -434,6 +434,67 @@ struct AffineTransform
         // clang-format on
     }
 
+    static void to_homography(const Mat& parameters, Mat& output)
+    {
+        if (output.empty()) {
+            output.create<ElementType>(1, 8, 1);
+        }
+
+        assert(!parameters.empty());
+        assert(parameters.rows == 1);
+        assert(parameters.cols == number_parameters);
+        assert(parameters.channels() == 1);
+        assert(parameters.type() == Mat::get_type_enum<ElementType>());
+
+        assert(!output.empty());
+        assert(output.rows == 1);
+        assert(output.cols == 8);
+        assert(output.channels() == 1);
+        assert(output.type() == Mat::get_type_enum<ElementType>());
+
+        Mat::ConstIterator<ElementType> params_it(parameters);
+
+        // clang-format off
+        output << std::initializer_list<ElementType> {
+            params_it(0, 0, 0), params_it(0, 1, 0), params_it(0, 2, 0),
+            params_it(0, 3, 0), params_it(0, 4, 0), params_it(0, 5, 0),
+            0, 0
+        };
+        // clang-format on
+    }
+
+    static void from_homography(const Mat& parameters, Mat& output)
+    {
+        if (output.empty()) {
+            output.create<ElementType>(1, number_parameters, 1);
+        }
+
+        assert(!parameters.empty());
+        assert(parameters.rows == 1);
+        assert(parameters.cols == 8);
+        assert(parameters.channels() == 1);
+        assert(parameters.type() == Mat::get_type_enum<ElementType>());
+
+        assert(!output.empty());
+        assert(output.rows == 1);
+        assert(output.cols == number_parameters);
+        assert(output.channels() == 1);
+        assert(output.type() == Mat::get_type_enum<ElementType>());
+
+        Mat::ConstIterator<ElementType> params_it(parameters);
+
+        // The homography must contain an affine transform
+        assert(params_it(0, 6, 0) == 0.0f);
+        assert(params_it(0, 7, 0) == 0.0f);
+
+        // clang-format off
+        output << std::initializer_list<ElementType> {
+            params_it(0, 0, 0), params_it(0, 1, 0), params_it(0, 2, 0),
+            params_it(0, 3, 0), params_it(0, 4, 0), params_it(0, 5, 0),
+        };
+        // clang-format on
+    }
+
     static void jacobian_origin(const ElementType x, ElementType y, Mat& output)
     {
         if (output.empty()) {
@@ -518,7 +579,36 @@ struct HomographyTransform
         // clang-format on
     }
 
-    static void scale(const float factor_x, const float factor_y, Mat& parameters)
+    /**
+     * The homography with <parameters> maps p to p':
+     *    w(p, parameters) = p'
+     *
+     * If we want to change the scale of the space where p and p' lie (e.g. when
+     * adapting the homography to work on a different image resolution) such
+     * that
+     *
+     *     P = s * p = w(p, scale),
+     *     P' = s * p' = w(p', scale),
+     *
+     * then
+     *
+     *     p = w^-1(P, scale),
+     *
+     * and
+     *
+     *     p' = w(p, parameters) = w(w^-1(P, scale), parameters).
+     *
+     * Therefore,
+     *
+     *     P' = w(w(w^-1(P, scale), parameters), scale).
+     *
+     * In matrix form, this is equivalent of transforming the homography H of
+     * <parameters> by using the scale-only homography S as follows:
+     *     H <- S * H * S^-1
+     */
+    static void change_scale(const Point<float>& scale,
+                             const Mat& parameters,
+                             Mat& adjusted_parameters)
     {
         assert(!parameters.empty());
         assert(parameters.rows == 1);
@@ -526,15 +616,75 @@ struct HomographyTransform
         assert(parameters.channels() == 1);
         assert(parameters.type() == Mat::get_type_enum<ElementType>());
 
-        Mat::Iterator<ElementType> p_it(parameters);
-        p_it(0, 1, 0) *= factor_y / factor_x;
-        p_it(0, 2, 0) *= factor_x;
+        Mat::ConstIterator<ElementType> params_it(parameters);
 
-        p_it(0, 3, 0) *= factor_x / factor_y;
-        p_it(0, 5, 0) *= factor_y;
+        adjusted_parameters << std::initializer_list<float>{
+            params_it(0, 0, 0),
+            params_it(0, 1, 0) * scale.x / scale.y,
+            params_it(0, 2, 0) * scale.x,
 
-        p_it(0, 6, 0) *= 1.0f / factor_x;
-        p_it(0, 7, 0) *= 1.0f / factor_y;
+            params_it(0, 3, 0) * scale.y / scale.x,
+            params_it(0, 4, 0),
+            params_it(0, 5, 0) * scale.y,
+
+            params_it(0, 6, 0) * 1.0f / scale.x,
+            params_it(0, 7, 0) * 1.0f / scale.y,
+        };
+    }
+
+    /**
+     * The homography with <parameters> maps p to p':
+     *    w(p, parameters) = p'
+     *
+     * If we want to change the position of the space where p and p' lie (e.g.
+     * if the homography was estimated for a cropped image and we want to obtain
+     * the homography that works for the original image) such that
+     *
+     *     P = t + p = w(p, translation),
+     *     P' = t + p' = w(p', translation),
+     *
+     * then
+     *
+     *     p = w^-1(P, translation),
+     *
+     * and
+     *
+     *     p' = w(p, parameters) = w(w^-1(P, translation), parameters).
+     *
+     * Therefore,
+     *
+     *     P' = w(w(w^-1(P, translation), parameters), translation).
+     *        = w(w(w(P, inv_translation), parameters), translation).
+     *
+     */
+    static void change_position(const Point<float>& translation,
+                                const Mat& parameters,
+                                Mat& adjusted_parameters)
+    {
+        Mat translation_mat;
+        Mat inv_translation_mat;
+
+        translation_mat.create<float>(1, number_parameters, 1);
+        inv_translation_mat.create<float>(1, number_parameters, 1);
+
+        // clang-format off
+        translation_mat << std::initializer_list<float>{
+            0, 0, translation.x,
+            0, 0, translation.y,
+            0, 0
+        };
+
+        inv_translation_mat << std::initializer_list<float>{
+            0, 0, -translation.x,
+            0, 0, -translation.y,
+            0, 0
+        };
+        // clang-format on
+
+        HomographyTransform<float>::compose(
+            parameters, inv_translation_mat, adjusted_parameters);
+        HomographyTransform<float>::compose(
+            translation_mat, adjusted_parameters, adjusted_parameters);
     }
 
     static void inverse(const Mat& parameters, Mat& inverted_parameters)
@@ -705,6 +855,48 @@ struct HomographyTransform
                composed_mat(2, 0),      composed_mat(2, 1)
         };
         // clang-format on
+    }
+
+    static void to_homography(const Mat& parameters, Mat& output)
+    {
+        if(output.empty()) {
+            output.create<ElementType>(1, number_parameters, 1);
+        }
+
+        assert(!parameters.empty());
+        assert(parameters.rows == 1);
+        assert(parameters.cols == number_parameters);
+        assert(parameters.channels() == 1);
+        assert(parameters.type() == Mat::get_type_enum<ElementType>());
+
+        assert(!output.empty());
+        assert(output.rows == 1);
+        assert(output.cols == number_parameters);
+        assert(output.channels() == 1);
+        assert(output.type() == Mat::get_type_enum<ElementType>());
+
+        output = Mat(parameters, Mat::CopyMode::Deep);
+    }
+
+    static void from_homography(const Mat& parameters, Mat& output)
+    {
+        if(output.empty()) {
+            output.create<ElementType>(1, number_parameters, 1);
+        }
+
+        assert(!parameters.empty());
+        assert(parameters.rows == 1);
+        assert(parameters.cols == number_parameters);
+        assert(parameters.channels() == 1);
+        assert(parameters.type() == Mat::get_type_enum<ElementType>());
+
+        assert(!output.empty());
+        assert(output.rows == 1);
+        assert(output.cols == number_parameters);
+        assert(output.channels() == 1);
+        assert(output.type() == Mat::get_type_enum<ElementType>());
+
+        output = Mat(parameters, Mat::CopyMode::Deep);
     }
 
     /**
