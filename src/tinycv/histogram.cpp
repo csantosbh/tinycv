@@ -1,5 +1,8 @@
 #include "histogram.h"
 
+namespace tinycv
+{
+
 float KroneckerFunction::histogram_bin_function(const float i)
 {
     return (i >= -0.5f && i <= 0.5f) ? 1 : 0;
@@ -140,4 +143,5 @@ void normalize_histogram(const double histogram_summation,
             }
         }
     }
+}
 }

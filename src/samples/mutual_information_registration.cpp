@@ -24,6 +24,7 @@ void load_stbibuf(stbibuf& output,
 int main(int argc, char** argv)
 {
     using std::vector;
+    using namespace tinycv;
 
     int width;
     int height;

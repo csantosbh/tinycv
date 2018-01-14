@@ -6,6 +6,10 @@
 #include "math.h"
 #include "transform.h"
 
+
+namespace tinycv
+{
+
 enum class ImageDerivativeAxis { dX, dY };
 enum class FilterOrder { Fifth, Seventh };
 
@@ -157,5 +161,5 @@ class DerivativeNaive
         output_image.for_each<Mat::Iterator<OutputPixelType>>(derivative_core);
     }
 };
-
+}
 #endif

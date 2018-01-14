@@ -1,6 +1,9 @@
 #include "bounding_box.h"
 #include "mat.h"
 
+namespace tinycv
+{
+
 using Matrix3fRowMajor = Eigen::Matrix<float, 3, 3, Eigen::RowMajor>;
 
 BoundingBox::BoundingBox()
@@ -69,4 +72,5 @@ BoundingBox bounding_box_intersect(const BoundingBox& bb_a,
                          max(bb_a.left_top[1], bb_b.left_top[1])},
                         {min(bb_a.right_bottom[0], bb_b.right_bottom[0]),
                          min(bb_a.right_bottom[1], bb_b.right_bottom[1])}});
+}
 }

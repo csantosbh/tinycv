@@ -9,6 +9,9 @@
 #include "transform.h"
 
 
+namespace tinycv
+{
+
 template <typename GradPixelType, typename TransformClass>
 void generate_steepest_gradient(const Mat& grad_x,
                                 const Mat& grad_y,
@@ -596,5 +599,6 @@ bool register_impl(const Mat& img_reference,
 bool register_homography(const Mat& reference,
                          const Mat& tracked,
                          Mat& transform_homography);
+}
 
 #endif

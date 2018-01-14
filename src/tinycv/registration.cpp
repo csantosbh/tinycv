@@ -15,6 +15,10 @@
 #include "test.h"
 #include "transform.h"
 
+
+namespace tinycv
+{
+
 inline bool register_homography(const Mat& reference,
                                 const Mat& tracked,
                                 Mat& transform_homography)
@@ -69,8 +73,7 @@ inline bool register_homography(const Mat& reference,
 
 
     HomographyTransform<float>::change_position(
-        {preprocess_blur_border,
-         preprocess_blur_border},
+        {preprocess_blur_border, preprocess_blur_border},
         transform_homography,
         transform_homography);
 
@@ -80,4 +83,5 @@ inline bool register_homography(const Mat& reference,
         work_to_input_scale, transform_homography, transform_homography);
 
     return true;
+}
 }

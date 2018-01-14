@@ -7,6 +7,10 @@
 
 #include "mat.h"
 
+
+namespace tinycv
+{
+
 class HistogramConfig
 {
   public:
@@ -802,6 +806,7 @@ void joint_hist_hessian(const Mat& img_reference,
     normalize_histogram(histogram_rt_sum, hist_rt_hess_it);
 
     return;
+}
 }
 
 #endif

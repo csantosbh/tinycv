@@ -2,7 +2,9 @@
 
 #include "mat.h"
 
-using namespace std;
+
+namespace tinycv
+{
 
 Mat::Mat()
     : data(nullptr)
@@ -22,8 +24,8 @@ Mat::Mat(const Mat& other, CopyMode copy_mode)
     if (copy_mode == CopyMode::Deep) {
         const size_t buffer_length = rows * cols * channels() * step.buf[2];
 
-        data_mgr_ = shared_ptr<void>(new uint8_t[buffer_length],
-                                     [](void* buf) { delete[] buf; });
+        data_mgr_ = std::shared_ptr<void>(new uint8_t[buffer_length],
+                                          [](void* buf) { delete[] buf; });
         data      = data_mgr_.get();
 
         memcpy(data, other.data, buffer_length);
@@ -92,8 +94,8 @@ Mat& Mat::create(int height, int width, int channels)
 
     compute_flags<T>(channels);
 
-    data_mgr_ = shared_ptr<T>(new T[rows * cols * channels],
-                              [](T* buf) { delete[] buf; });
+    data_mgr_ = std::shared_ptr<T>(new T[rows * cols * channels],
+                                   [](T* buf) { delete[] buf; });
     data      = data_mgr_.get();
 
     return *this;
@@ -175,3 +177,4 @@ operator()(int row, int col, int chan) const;
 
 template const float& Mat::ConstIterator<float>::
 operator()(int row, int col, int chan) const;
+}

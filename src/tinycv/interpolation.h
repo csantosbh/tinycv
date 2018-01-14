@@ -9,6 +9,10 @@
 #include "mat.h"
 #include "math.h"
 
+
+namespace tinycv
+{
+
 /**
  * Sample pixel at arbitrary coordinate using bilinear interpolation
  *
@@ -228,6 +232,7 @@ void nearest_neighbor_sample(const Mat::ConstIterator<PixelType>& it_img,
     for (int channel = 0; channel < channels; ++channel) {
         output[channel] = it_img(y, x, channel);
     }
+}
 }
 
 #endif

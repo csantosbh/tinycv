@@ -12,6 +12,10 @@
 #include "registration.h"
 #include "transform.h"
 
+
+namespace tinycv
+{
+
 static const float TEST_ALPHA_RANGE   = 1.f;
 static const float TEST_DELTA_ALPHA   = 0.5f;
 static const int TEST_ALPHA_MODEL_IDX = 2;
@@ -815,6 +819,7 @@ void generate_mi_hessian_space(const std::string& file_name,
     file_handle.close();
 
     return;
+}
 }
 
 #endif

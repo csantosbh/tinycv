@@ -5,6 +5,10 @@
 #include "math.h"
 #include "sat.h"
 
+
+namespace tinycv
+{
+
 /*
  * The generated SAT contains one extra row and one extra column with zeroes:
  *
@@ -192,4 +196,5 @@ void scale_from_sat(const Mat& source, float scale, Mat& destination)
             }
         }
     }
+}
 }

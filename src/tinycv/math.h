@@ -3,6 +3,10 @@
 
 #include <algorithm>
 
+
+namespace tinycv
+{
+
 template <typename PrimitiveType>
 struct Point
 {
@@ -43,6 +47,7 @@ template <typename T>
 T sign(T value)
 {
     return value < 0 ? -1 : value == 0 ? 0 : 1;
+}
 }
 
 #endif

@@ -8,6 +8,10 @@
 #include "mat.h"
 #include "math.h"
 
+
+namespace tinycv
+{
+
 struct BoundingBox
 {
     BoundingBox();
@@ -99,6 +103,7 @@ Mat image_crop(const Mat& image, const BoundingBox& crop_bb)
     output.data_mgr_ = image.data_mgr_;
 
     return output;
+}
 }
 
 #endif

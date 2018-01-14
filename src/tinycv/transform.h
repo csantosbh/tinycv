@@ -9,6 +9,10 @@
 #include "mat.h"
 #include "math.h"
 
+
+namespace tinycv
+{
+
 using Matrix3fRowMajor = Eigen::Matrix<float, 3, 3, Eigen::RowMajor>;
 
 template <typename PixelType>
@@ -945,5 +949,7 @@ struct HomographyTransform
         // clang-format on
     }
 };
+
+}
 
 #endif

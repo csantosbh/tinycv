@@ -64,5 +64,5 @@ class CvMat(interface.TypeInspectorInterface):
         """
         # Check if symbol type is the expected buffer
         symbol_type = str(symbol.type)
-        type_regex = r'(const\s+)?Mat(\s+?[*&])?'
+        type_regex = r'(const\s+)?tinycv::Mat(\s+?[*&])?'
         return re.match(type_regex, symbol_type) is not None

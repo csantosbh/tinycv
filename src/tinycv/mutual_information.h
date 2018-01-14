@@ -4,6 +4,10 @@
 #include "histogram.h"
 #include "mat.h"
 
+
+namespace tinycv
+{
+
 using MaskPixelType = uint8_t;
 
 /**
@@ -382,17 +386,16 @@ void mutual_information_hessian(const Mat& img_reference,
                        BinningMethod,
                        TransformClass,
                        PositiveMaskIterator,
-                       MaskIteratorT>(
-        img_reference,
-        {},
-        steepest_grad_r,
-        steepest_hess_r,
-        img_tracked,
-        mask_tracked_it,
-        histogram_r_sum,
-        histogram_rt_sum,
-        histogram_r_grad,
-        histogram_rt_hess);
+                       MaskIteratorT>(img_reference,
+                                      {},
+                                      steepest_grad_r,
+                                      steepest_hess_r,
+                                      img_tracked,
+                                      mask_tracked_it,
+                                      histogram_r_sum,
+                                      histogram_rt_sum,
+                                      histogram_r_grad,
+                                      histogram_rt_hess);
 
     assert(histogram_rt_hess.rows == number_hist_bins &&
            histogram_rt_hess.cols == number_hist_bins);
@@ -439,6 +442,7 @@ void mutual_information_hessian(const Mat& img_reference,
             }
         }
     }
+}
 }
 
 #endif

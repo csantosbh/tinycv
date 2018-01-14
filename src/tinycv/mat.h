@@ -7,6 +7,10 @@
 
 #include "template_utils.h"
 
+
+namespace tinycv
+{
+
 struct BoundingBox;
 
 class Mat
@@ -314,5 +318,6 @@ class Mat
 
 constexpr Mat::Type SatTypeEnum = Mat::Type::INT32;
 using SatType                   = int32_t;
+}
 
 #endif

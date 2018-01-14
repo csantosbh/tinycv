@@ -2,6 +2,10 @@
 
 #include "line.h"
 
+
+namespace tinycv
+{
+
 template <typename PixelType>
 void iterate_line(const Point<int>& a,
                   const Point<int>& b,
@@ -75,4 +79,5 @@ void draw_line(const Point<int>& a,
                 }
             }
         });
+}
 }

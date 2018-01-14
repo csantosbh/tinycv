@@ -6,10 +6,15 @@
 #include "tinycv/mat.h"
 #include "tinycv/math.h"
 
+
+namespace tinycv
+{
+
 template <typename PixelType, int NumChannels>
 void draw_line(const Point<int>& a,
                const Point<int>& b,
                const std::array<PixelType, NumChannels>& color,
                Mat& canvas);
+}
 
 #endif
