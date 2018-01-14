@@ -21,7 +21,6 @@ void load_stbibuf(stbibuf& output,
     channels = 1;
 }
 
-Mat pequena[2];
 int main(int argc, char** argv)
 {
     using std::vector;
@@ -81,53 +80,6 @@ int main(int argc, char** argv)
                               {0},
                               destination);
     }
-
-    //////////// tsttttttttt
-    Mat scale_params;
-    const float scale = 0.3f;
-    const int blur_kernel_border = 6;
-    scale_params.create<float>(1,8,1);
-    scale_params << std::initializer_list<float>{
-        1.f/scale - 1, 0, 0,
-        0, 1.f/scale - 1, 0,
-        0, 0
-    };
-    Mat translate_params;
-    translate_params.create<float>(1, 8, 1);
-    translate_params << std::initializer_list<float>{
-        0, 0, blur_kernel_border,
-        0, 0, blur_kernel_border,
-        0, 0
-    };
-    Mat us_ref;
-    Mat us_trac;
-    Mat us_trac_aligned;
-    Mat output_scaled_mask2;
-    HomographyTransform<float>::compose(scale_params, translate_params, scale_params);
-    image_transform<float,
-                    1,
-                    HomographyTransform<float>,
-                    bilinear_sample<float, 1>>(
-        pequena[0],
-        scale_params,
-        BoundingBox(source),
-        us_ref,
-        output_scaled_mask2);
-    image_transform<float,
-                    1,
-                    HomographyTransform<float>,
-                    bilinear_sample<float, 1>>(
-        pequena[1],
-        scale_params,
-        BoundingBox(source),
-        us_trac,
-        output_scaled_mask2);
-    image_transform<float,
-                    1,
-                    HomographyTransform<float>,
-                    bilinear_sample<float, 1>>(
-        us_trac, homography, BoundingBox(source), us_trac_aligned, transf_mask);
-
 
     /*
     const Point<int> center{destination.cols / 2, destination.rows / 2};

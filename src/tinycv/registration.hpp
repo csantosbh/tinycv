@@ -18,7 +18,6 @@
 #include "test.h"
 #include "transform.h"
 
-Mat escalada[2];
 inline bool register_homography(const Mat& reference,
                                 const Mat& tracked,
                                 Mat& transform_homography)
@@ -72,55 +71,17 @@ inline bool register_homography(const Mat& reference,
         transform_homography);
 
 
-
-    // tst0
-    Mat msk, prep_alinhada;
-
-    image_transform<float,
-                    1,
-                    HomographyTransform<float>,
-                    bilinear_sample<float, 1>>(tracked_preprocessed,
-                                               transform_homography,
-                                               BoundingBox(reference_preprocessed),
-                                               prep_alinhada,
-                                               msk);
-    // tst0
-
-
-
-
-
     HomographyTransform<float>::change_position(
-        {static_cast<float>(preprocess_blur_border),
-         static_cast<float>(preprocess_blur_border)},
+        {preprocess_blur_border,
+         preprocess_blur_border},
         transform_homography,
         transform_homography);
 
-
-    // tst
-    {
-
-
-        Mat referencia=escalada[0];
-        Mat alinhada;
-        image_transform<uint8_t,
-                        1,
-                        HomographyTransform<float>,
-                        bilinear_sample<uint8_t, 1>>(escalada[1],
-                                                   transform_homography,
-                                                   BoundingBox(referencia),
-                                                   alinhada,
-                                                   msk);
-        int breakpoint;
-        breakpoint=12;
-    }
-
-
-    const Point<float> work_scale_to_full_scale{1.f / work_scale,
-                                                1.f / work_scale};
+    const Point<float> work_to_input_scale{1.f / work_scale, 1.f / work_scale};
 
     HomographyTransform<float>::change_scale(
-        work_scale_to_full_scale, transform_homography, transform_homography);
+        work_to_input_scale, transform_homography, transform_homography);
+
     return true;
 }
 

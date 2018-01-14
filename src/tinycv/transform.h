@@ -737,6 +737,7 @@ struct HomographyTransform
      * Equivalent to:
      *  w(x, composed_params) <- w(w(x, inner_params), outer_params)
      */
+    // TODO refactor with compose function below
     static void compose(const Mat& outer_params,
                         const Point<ElementType>& inner_translation_params,
                         Mat& composed_params)
