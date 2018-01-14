@@ -30,6 +30,7 @@ int main(int argc, char** argv)
     int height;
     int channels;
 
+    /// Load input images
     stbibuf stb_source;
     load_stbibuf(stb_source, "../source.jpg", width, height, channels);
 
@@ -37,6 +38,7 @@ int main(int argc, char** argv)
     load_stbibuf(
         stb_destination, "../destination.jpg", width, height, channels);
 
+    /// Convert input images to the Mat structure
     Mat source;
     source.create_from_buffer<uint8_t>(
         stb_source.get(), height, width, channels, width * channels);
@@ -45,10 +47,12 @@ int main(int argc, char** argv)
     destination.create_from_buffer<uint8_t>(
         stb_destination.get(), height, width, channels, width * channels);
 
+    /// Register input images
     Mat homography;
 
     register_homography(destination, source, homography);
 
+    /// Warp source image with homography
     Mat transf_test;
     Mat transf_mask;
     image_transform<uint8_t,
@@ -57,7 +61,9 @@ int main(int argc, char** argv)
                     bilinear_sample<uint8_t, 1>>(
         source, homography, BoundingBox(source), transf_test, transf_mask);
 
-    // Corners in clockwise order, starting at top left
+    /// Draw contour of transformed <source> into <destination>
+
+    // Corners are defined in clockwise order, starting at top left
     vector<Point<float>> source_corners{
         {0.f, 0.f},
         {static_cast<float>(source.cols) - 1.f, 0.f},
@@ -81,26 +87,6 @@ int main(int argc, char** argv)
                               {0},
                               destination);
     }
-
-    /*
-    const Point<int> center{destination.cols / 2, destination.rows / 2};
-
-    Mat drawing(destination, Mat::CopyMode::Deep);
-
-    const float alpha_step = static_cast<float>(2.0*M_PI/3.0);
-    for (float alpha = 0.0; alpha < 2 * M_PI; alpha += alpha_step) {
-        const float radius_length = 100.f;
-        const Point<int> radius{
-            center.x + static_cast<int>(round(cos(alpha) * radius_length)),
-            center.y + static_cast<int>(round(sin(alpha) * radius_length))};
-        const Point<int> a{
-            center.x + static_cast<int>(round(cos(alpha-alpha_step) *
-    radius_length)), center.y + static_cast<int>(round(sin(alpha-alpha_step) *
-    radius_length))};
-
-        draw_line<uint8_t, 1>(a, radius, {255}, drawing);
-    }
-    */
 
     return 0;
 }
