@@ -3,14 +3,20 @@
 
 #include "registration.h"
 #include "transform.h"
+
 #include "draw/line.h"
 
-#ifdef TINYCV_IMPLEMENTATION
-#include "mat.hpp"
-#include "registration.hpp"
-#include "bounding_box.hpp"
-#include "sat.hpp"
-#include "draw/line.hpp"
+#define TINYCV_IMPLEMENTATION
+#define TINYCV_HEADER_ONLY
+
+#if defined(TINYCV_IMPLEMENTATION) && defined(TINYCV_HEADER_ONLY)
+#include "bounding_box.cpp"
+#include "histogram.cpp"
+#include "mat.cpp"
+#include "registration.cpp"
+#include "sat.cpp"
+
+#include "draw/line.cpp"
 #endif
 
 #endif

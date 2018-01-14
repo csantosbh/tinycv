@@ -1,6 +1,3 @@
-#ifndef _TINYCV_REGISTRATION_HPP_
-#define _TINYCV_REGISTRATION_HPP_
-
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -84,5 +81,3 @@ inline bool register_homography(const Mat& reference,
 
     return true;
 }
-
-#endif

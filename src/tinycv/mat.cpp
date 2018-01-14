@@ -1,6 +1,3 @@
-#ifndef _TINYCV_MAT_HPP_
-#define _TINYCV_MAT_HPP_
-
 #include <cassert>
 
 #include "mat.h"
@@ -178,5 +175,3 @@ operator()(int row, int col, int chan) const;
 
 template const float& Mat::ConstIterator<float>::
 operator()(int row, int col, int chan) const;
-
-#endif
