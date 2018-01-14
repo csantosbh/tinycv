@@ -249,6 +249,7 @@ void gaussian_blur(const Mat& image,
         kernel_summation += current_value;
     }
 
+    // TODO image might contain black border, but convolution is ignoring the mask
     float norm_factor = 1.f / (kernel_summation * kernel_summation);
     image_convolve<InputPixelType, OutputPixelType, channels>(
         image, kernel, kernel, norm_factor, output_image);
@@ -778,6 +779,7 @@ struct HomographyTransform
         // clang-format on
 
         Matrix3RowMajor composed_mat = outer_mat * inner_mat;
+        composed_mat *= 1.f / composed_mat(2, 2);
 
         // Fill output parameter matrix
         // clang-format off
@@ -846,6 +848,7 @@ struct HomographyTransform
         // clang-format on
 
         Matrix3RowMajor composed_mat = outer_mat * inner_mat;
+        composed_mat *= 1.f / composed_mat(2, 2);
 
         // Fill output parameter matrix
         // clang-format off

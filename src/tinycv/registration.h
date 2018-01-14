@@ -370,11 +370,23 @@ void preprocess_image(const float scale,
 
     Mat output_blurred;
     gaussian_blur<InputPixelType, InputPixelType, 1>(
-        output_scaled, blur_kernel_border, blur_std, output_blurred);
+        output_scaled, blur_kernel_border, blur_std / 3.f, output_blurred);
 
     output = image_remap_histogram<InputPixelType,
                                    OutputPixelType,
                                    PositiveMaskIterator>(output_blurred, {});
+
+
+    extern Mat pequena[2];
+    extern Mat escalada[2];
+
+    static int idx = 0;
+    pequena[idx] = output;
+    escalada[idx] = output_scaled;
+
+    idx++;
+
+    return;
 }
 
 template <typename PixelType,
@@ -586,6 +598,78 @@ bool register_impl(const Mat& img_reference,
             TransformClass::from_homography(composed_p_homog, composed_p);
         }
     }
+
+    // //////// tst
+    {
+        Mat scale_params;
+        const float scale = 0.3f;
+        scale_params.create<float>(1, 8, 1);
+        scale_params << std::initializer_list<float>{
+            1.f / scale - 1, 0, 0, 0, 1.f / scale - 1, 0, 0, 0};
+        Mat res_ref, res_trac;
+        Mat msk;
+
+        image_transform<float,
+                        1,
+                        HomographyTransform<float>,
+                        bilinear_sample<float, 1>>(
+            local_reference,
+            scale_params,
+            bounding_box_transform<HomographyTransform<float>>(
+                BoundingBox(local_reference), scale_params),
+            res_ref,
+            msk);
+
+        image_transform<float,
+                        1,
+                        HomographyTransform<float>,
+                        bilinear_sample<float, 1>>(
+            local_tracked,
+            scale_params,
+            bounding_box_transform<HomographyTransform<float>>(
+                BoundingBox(local_reference), scale_params),
+            res_trac,
+            msk);
+
+        // //////////////////
+
+        Mat warp_then_scale;
+        warp_then_scale.create<float>(1, 8, 1);
+
+        Mat ucr_ref, ucr_trac;
+
+        Mat composed_p_homog;
+        TransformClass::to_homography(composed_p, composed_p_homog);
+        HomographyTransform<float>::compose(
+            scale_params, composed_p_homog, warp_then_scale);
+
+        image_transform<float,
+                        1,
+                        HomographyTransform<float>,
+                        bilinear_sample<float, 1>>(
+            img_tracked,
+            warp_then_scale,
+            bounding_box_transform<HomographyTransform<float>>(
+                BoundingBox(img_reference), scale_params),
+            ucr_trac,
+            msk);
+
+        image_transform<float,
+                        1,
+                        HomographyTransform<float>,
+                        bilinear_sample<float, 1>>(
+            img_reference,
+            scale_params,
+            bounding_box_transform<HomographyTransform<float>>(
+                BoundingBox(img_reference), scale_params),
+            ucr_ref,
+            msk);
+
+
+        int breakpoint = 0;
+        breakpoint     = 12;
+    }
+    // ////// tst over
 
     return converged;
 }
