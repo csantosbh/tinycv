@@ -386,17 +386,19 @@ void preprocess_image(const float scale,
 template <typename PixelType,
           typename GradPixelType,
           typename DerivativeMethod,
-          typename TransformClass>
+          typename TransformClass,
+          typename BinningMethod>
 bool register_impl(const Mat& img_reference,
                    const Mat& img_tracked,
                    const Mat& initial_guess,
+                   const Mat& steepest_gradient_r,
+                   const Mat& mi_hessian,
                    Mat& composed_p)
 {
-    const int number_max_iterations   = 30;
+    const int number_max_iterations   = 15;
     const int number_transform_params = TransformClass::number_parameters;
     const float convergence_threshold = 1e-3f;
 
-    using BinningMethod = BSpline4;
     using TransformColType =
         Eigen::Matrix<GradPixelType, number_transform_params, 1>;
     using HessianMatType = Eigen::Matrix<GradPixelType,
@@ -404,30 +406,9 @@ bool register_impl(const Mat& img_reference,
                                          number_transform_params,
                                          Eigen::RowMajor>;
 
-    // Declare gradient images
-    Mat grad_x_reference;
-    Mat grad_y_reference;
-
-    // Generate gradients
-    DerivativeMethod::template derivative<PixelType, GradPixelType>(
-        img_reference, ImageDerivativeAxis::dX, grad_x_reference);
-
-    DerivativeMethod::template derivative<PixelType, GradPixelType>(
-        img_reference, ImageDerivativeAxis::dY, grad_y_reference);
-
     ///
     // Crop image borders to match their sizes with the second derivative
     const int gradient_border = DerivativeMethod::border_crop_size();
-
-    BoundingBox border_bb_1{
-        {{gradient_border, gradient_border}},
-        {{static_cast<float>(grad_x_reference.cols - gradient_border - 1),
-          static_cast<float>(grad_x_reference.rows - gradient_border - 1)}}};
-
-    Mat cropped_grad_x =
-        image_crop<GradPixelType>(grad_x_reference, border_bb_1);
-    Mat cropped_grad_y =
-        image_crop<GradPixelType>(grad_y_reference, border_bb_1);
 
     BoundingBox border_bb_2{
         {{gradient_border * 2, gradient_border * 2}},
@@ -436,23 +417,6 @@ bool register_impl(const Mat& img_reference,
     Mat cropped_reference = image_crop<PixelType>(img_reference, border_bb_2);
     Mat cropped_tracked   = image_crop<PixelType>(img_tracked, border_bb_2);
 
-    // Generate steepest gradient image
-    Mat steepest_gradient_r;
-    generate_steepest_gradient<GradPixelType, TransformClass>(
-        cropped_grad_x, cropped_grad_y, steepest_gradient_r);
-
-    // Generate Mutual Information Hessian of reference image with itself at
-    // origin
-    Mat mi_hessian;
-    generate_self_ic_hessian<PixelType,
-                             GradPixelType,
-                             BinningMethod,
-                             TransformClass,
-                             DerivativeMethod>(img_reference,
-                                               grad_x_reference,
-                                               grad_y_reference,
-                                               steepest_gradient_r,
-                                               mi_hessian);
     Eigen::Map<HessianMatType> mi_hessian_mat(
         static_cast<GradPixelType*>(mi_hessian.data));
     HessianMatType mi_hessian_inv = mi_hessian_mat.inverse();
@@ -541,11 +505,13 @@ bool register_impl(const Mat& img_reference,
         Eigen::Map<TransformColType> mi_gradient_mat(
             static_cast<GradPixelType*>(mi_gradient.data));
 
+#ifndef NDEBUG
         std::cout << mutual_information<PixelType, BinningMethod>(
                          local_reference,
                          local_tracked,
                          Mat::ConstIterator<MaskPixelType>(local_mask_t))
                   << " " << mi_gradient_mat.transpose() << std::endl;
+#endif
 
         delta_p_mat = mi_hessian_inv * mi_gradient_mat;
 
@@ -596,9 +562,24 @@ bool register_impl(const Mat& img_reference,
     return converged;
 }
 
-bool register_homography(const Mat& reference,
-                         const Mat& tracked,
-                         Mat& transform_homography);
+class NonLinearRegistration
+{
+  public:
+    bool register_homography(const Mat& tracked,
+                             const Mat& initial_guess,
+                             Mat& transform_homography);
+
+    void set_reference(const Mat& reference);
+
+  private:
+    Mat reference_preprocessed_;
+    std::map<std::string, Mat> steepest_gradient_r_;
+    std::map<std::string, Mat> mi_hessian_;
+
+    const float work_scale_           = 0.2f;
+    const int preprocess_blur_border_ = 6;
+    const float preprocess_blur_std_  = 2.0;
+};
 }
 
 #endif

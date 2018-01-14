@@ -48,9 +48,12 @@ int main(int argc, char** argv)
         stb_destination.get(), height, width, channels, width * channels);
 
     /// Register input images
-    Mat homography;
+    NonLinearRegistration aligner;
+    aligner.set_reference(destination);
 
-    register_homography(destination, source, homography);
+    Mat initial_guess;
+    Mat homography;
+    aligner.register_homography(source, initial_guess, homography);
 
     /// Warp source image with homography
     Mat transf_test;
