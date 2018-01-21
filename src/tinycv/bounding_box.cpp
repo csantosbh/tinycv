@@ -27,6 +27,8 @@ BoundingBox::BoundingBox(
     : left_top(*corners.begin())
     , right_bottom(*(corners.end() - 1))
 {
+    // This method expects two corners: The left-top and the right-bottom
+    assert(corners.size() == 2);
 }
 
 BoundingBox::BoundingBox(const Mat& image)

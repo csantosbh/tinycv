@@ -334,6 +334,13 @@ void generate_self_ic_hessian(const Mat& img_reference,
                                                      mi_hessian);
 }
 
+/**
+ * Performs these operations to the input images, in the following order:
+ *
+ * - Scale by <scale>
+ * - Apply gaussian blur with kernel <blur_kernel_border> and std <blur_std>
+ * - Convert image to float and remap range by <image_remap_histogram()>
+ */
 template <typename InputPixelType>
 void preprocess_image(const float scale,
                       const int blur_kernel_border,
@@ -393,9 +400,9 @@ bool register_impl(const Mat& img_reference,
                    const Mat& initial_guess,
                    const Mat& steepest_gradient_r,
                    const Mat& mi_hessian,
+                   const int number_max_iterations,
                    Mat& composed_p)
 {
-    const int number_max_iterations   = 15;
     const int number_transform_params = TransformClass::number_parameters;
     const float convergence_threshold = 1e-3f;
 
@@ -562,23 +569,25 @@ bool register_impl(const Mat& img_reference,
     return converged;
 }
 
+template <typename TransformClass>
 class NonLinearRegistration
 {
   public:
-    bool register_homography(const Mat& tracked,
-                             const Mat& initial_guess,
-                             Mat& transform_homography);
+    bool register_image(const Mat& tracked,
+                        const Mat& initial_guess,
+                        Mat& transform);
 
     void set_reference(const Mat& reference);
 
   private:
     Mat reference_preprocessed_;
-    std::map<std::string, Mat> steepest_gradient_r_;
-    std::map<std::string, Mat> mi_hessian_;
+    Mat steepest_gradient_r_;
+    Mat mi_hessian_;
 
     const float work_scale_           = 0.2f;
     const int preprocess_blur_border_ = 6;
     const float preprocess_blur_std_  = 2.0;
+    const int number_max_iterations_  = 15;
 };
 }
 

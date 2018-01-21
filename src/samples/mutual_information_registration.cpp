@@ -48,12 +48,14 @@ int main(int argc, char** argv)
         stb_destination.get(), height, width, channels, width * channels);
 
     /// Register input images
-    NonLinearRegistration aligner;
+    NonLinearRegistration<HomographyTransform<float>> aligner;
     aligner.set_reference(destination);
 
     Mat initial_guess;
+    HomographyTransform<float>::identity(initial_guess);
+
     Mat homography;
-    aligner.register_homography(source, initial_guess, homography);
+    aligner.register_image(source, initial_guess, homography);
 
     /// Warp source image with homography
     Mat transf_test;
