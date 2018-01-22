@@ -25,6 +25,13 @@ Point<PrimitiveType> operator-(const Point<PrimitiveType>& point)
     return {-point.x, -point.y};
 }
 
+template <typename PrimitiveType>
+Point<PrimitiveType> operator+(const Point<PrimitiveType>& a,
+                               const Point<PrimitiveType>& b)
+{
+    return {a.x + b.x, a.y + b.y};
+}
+
 template <typename T>
 T clamp(T value, T lowest, T highest)
 {

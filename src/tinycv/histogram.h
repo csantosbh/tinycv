@@ -103,11 +103,14 @@ Mat image_remap_histogram(const Mat& input_img,
         input_img.rows, input_img.cols, input_img.channels());
 
     // Compute coefficients of linear bin mapping function
+    static bool xulamps=true;
     const float epsilon   = HistogramConfig::remap_epsilon();
-    const float color_max = 255.f + epsilon;
+    const float color_max = xulamps? 223.f + epsilon : 255.f + epsilon;
+    const float color_min = xulamps ? 28.f : 0.f;
+    xulamps=false;
     const float a_bin_map =
-        static_cast<float>(HistogramConfig::num_central_bins()) / color_max;
-    const float b_bin_map = -0.5;
+        static_cast<float>(HistogramConfig::num_central_bins()) / (color_max-color_min);
+    const float b_bin_map = -0.5-a_bin_map*color_min;
 
     Mat::ConstIterator<InputPixelType> input_it(input_img);
     output_img.for_each<Mat::Iterator<OutputPixelType>>(

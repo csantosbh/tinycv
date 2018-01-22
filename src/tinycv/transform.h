@@ -240,6 +240,8 @@ void gaussian_blur(const Mat& image,
                    float standard_deviation,
                    Mat& output_image)
 {
+    assert(std::abs(standard_deviation) > 1e-6f);
+
     Mat kernel;
     kernel.create<float>(1, 2 * kernel_border_size + 1, 1);
     Mat::Iterator<float> kernel_it(kernel);
@@ -416,6 +418,7 @@ struct HomographyTransform
         // clang-format on
 
         Matrix3RowMajor inv_mat = params_mat.inverse();
+        inv_mat *= 1.f / inv_mat(2, 2);
 
         // clang-format off
         inverted_parameters << std::initializer_list<ElementType>{
@@ -533,6 +536,8 @@ struct HomographyTransform
                composed_mat(2, 0),      composed_mat(2, 1)
         };
         // clang-format on
+
+        return;
     }
 
     static void to_homography(const Mat& parameters, Mat& output)

@@ -417,25 +417,30 @@ bool register_impl(const Mat& img_reference,
     // Crop image borders to match their sizes with the second derivative
     const int gradient_border = DerivativeMethod::border_crop_size();
 
-    BoundingBox border_bb_2{
+    const BoundingBox border_bb_2_r {
         {{gradient_border * 2, gradient_border * 2}},
         {{static_cast<float>(img_reference.cols - gradient_border * 2 - 1),
           static_cast<float>(img_reference.rows - gradient_border * 2 - 1)}}};
-    Mat cropped_reference = image_crop<PixelType>(img_reference, border_bb_2);
-    Mat cropped_tracked   = image_crop<PixelType>(img_tracked, border_bb_2);
+    Mat cropped_reference = image_crop<PixelType>(img_reference, border_bb_2_r);
+
+    const BoundingBox border_bb_2_t {
+        {{gradient_border * 2, gradient_border * 2}},
+        {{static_cast<float>(img_tracked.cols - gradient_border * 2 - 1),
+          static_cast<float>(img_tracked.rows - gradient_border * 2 - 1)}}};
+    Mat cropped_tracked   = image_crop<PixelType>(img_tracked, border_bb_2_t);
 
     Eigen::Map<HessianMatType> mi_hessian_mat(
         static_cast<GradPixelType*>(mi_hessian.data));
+    // TODO precompute outside and receive the inv instead
     HessianMatType mi_hessian_inv = mi_hessian_mat.inverse();
 
-    // Bounding box of the input reference image
+    // Bounding box of the input images
     const BoundingBox cropped_ref_bb(cropped_reference);
+    const BoundingBox cropped_tracked_bb(cropped_tracked);
 
     // Accumulated transform parameter
     if (composed_p.empty()) {
         composed_p.create<GradPixelType>(1, number_transform_params, 1);
-    } else {
-        // TODO assert
     }
 
     // Transform parameter step matrix and its inverse
@@ -444,26 +449,24 @@ bool register_impl(const Mat& img_reference,
     Mat delta_p_inv;
     delta_p_inv.create<GradPixelType>(1, number_transform_params, 1);
 
+    // Make sure the variants of parameters p are correct
+    TransformClass::assert_validity(composed_p);
+    TransformClass::assert_validity(delta_p);
+    TransformClass::assert_validity(delta_p_inv);
+
     // Initialize transform with initial guess
     composed_p << initial_guess;
 
     // Convert initial guess from input image space to cropped work space
     Mat composed_p_homog;
-
-    if (std::is_same<TransformClass, HomographyTransform<PixelType>>::value) {
-        composed_p_homog = composed_p;
-    } else {
-        TransformClass::to_homography(composed_p, composed_p_homog);
-    }
+    TransformClass::to_homography(composed_p, composed_p_homog);
 
     HomographyTransform<PixelType>::change_position(
         {-2 * gradient_border, -2 * gradient_border},
         composed_p_homog,
         composed_p_homog);
 
-    if (!std::is_same<TransformClass, HomographyTransform<PixelType>>::value) {
-        TransformClass::from_homography(composed_p_homog, composed_p);
-    }
+    TransformClass::from_homography(composed_p_homog, composed_p);
 
     // Mutual information gradient, to be computed at each iteration
     Mat mi_gradient;
@@ -478,7 +481,7 @@ bool register_impl(const Mat& img_reference,
     for (int iteration = 1;; ++iteration) {
         // Compute transform bounding box
         BoundingBox interest_bb = bounding_box_intersect(
-            bounding_box_transform<TransformClass>(cropped_ref_bb, composed_p),
+            bounding_box_transform<TransformClass>(cropped_tracked_bb, composed_p),
             cropped_ref_bb);
 
         // Generate cropped reference and steepest grad images
@@ -537,12 +540,6 @@ bool register_impl(const Mat& img_reference,
         TransformClass::compose(composed_p, delta_p_inv, composed_p);
     }
 
-    std::cout << "\n"
-              << Eigen::Map<TransformColType>(
-                     static_cast<GradPixelType*>(composed_p.data))
-                     .transpose()
-              << std::endl;
-
     if (converged) {
         // Convert transform from cropped work space to un-cropped input image
         // space
@@ -584,10 +581,10 @@ class NonLinearRegistration
     Mat steepest_gradient_r_;
     Mat mi_hessian_;
 
-    const float work_scale_           = 0.2f;
+    const float work_scale_           = 1.0f;
     const int preprocess_blur_border_ = 6;
-    const float preprocess_blur_std_  = 2.0;
-    const int number_max_iterations_  = 15;
+    const float preprocess_blur_std_  = 4.0;
+    const int number_max_iterations_  = 60;
 };
 }
 

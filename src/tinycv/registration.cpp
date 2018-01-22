@@ -27,7 +27,7 @@ using BinningMethod    = BSpline4;
 template <typename TransformClass>
 bool NonLinearRegistration<TransformClass>::register_image(
     const Mat& tracked,
-    const Mat& initial_guess,
+    const Mat& initial_guess_input,
     Mat& transform)
 {
     Mat tracked_preprocessed;
@@ -39,6 +39,19 @@ bool NonLinearRegistration<TransformClass>::register_image(
                               tracked,
                               tracked_preprocessed);
 
+    // Convert homography from input space to cropped/scaled preprocessed space
+    Mat initial_guess_preprocessed;
+    TransformClass::change_position(
+        {-preprocess_blur_border_, -preprocess_blur_border_},
+        initial_guess_input,
+        initial_guess_preprocessed);
+
+    const Point<float> input_to_work_scale{work_scale_, work_scale_};
+
+    TransformClass::change_scale(input_to_work_scale,
+                                 initial_guess_preprocessed,
+                                 initial_guess_preprocessed);
+
     // Perform registration
     register_impl<PixelType,
                   GradPixelType,
@@ -46,7 +59,7 @@ bool NonLinearRegistration<TransformClass>::register_image(
                   TransformClass,
                   BinningMethod>(reference_preprocessed_,
                                  tracked_preprocessed,
-                                 initial_guess,
+                                 initial_guess_preprocessed,
                                  steepest_gradient_r_,
                                  mi_hessian_,
                                  number_max_iterations_,
