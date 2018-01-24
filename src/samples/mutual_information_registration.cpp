@@ -57,11 +57,20 @@ int main(int argc, char** argv)
                      {(float)destination.cols / 2.f + 120.f,
                       (float)destination.rows / 2 + 120.f}}));
     //*/
-    //Mat ref_roi = destination;
+    // Mat ref_roi = destination;
     aligner.set_reference(ref_roi);
 
     Mat initial_guess;
     initial_guess.create<float>(1, 8, 1);
+
+    HomographyTransform<float>::from_matches(
+        {{0, 0}, {200, 0}, {200, 200}, {0, 200}},
+        {{281.1662f, 154.7470f},
+         {516.9434f, 136.7685f},
+         {484.2327f, 379.9645f},
+         {262.9684f, 379.7526f}},
+        initial_guess);
+
     // clang-format off
     initial_guess << std::initializer_list<float> {
         -0.0178573, 0.0794328, -288.4373143, 0.0688481,
@@ -73,14 +82,13 @@ int main(int argc, char** argv)
     };
     HomographyTransform<float>::compose({20, 20}, initial_guess, initial_guess);
     // clang-format on
-    //HomographyTransform<float>::identity(initial_guess);
+    // HomographyTransform<float>::identity(initial_guess);
 
     Mat homography;
     aligner.register_image(source, initial_guess, homography);
 
     // Print registration parameter
-    using TransformColType =
-        Eigen::Matrix<GradPixelType, 8, 1>;
+    using TransformColType = Eigen::Matrix<GradPixelType, 8, 1>;
     std::cout << "\n"
               << Eigen::Map<TransformColType>(
                      static_cast<GradPixelType*>(homography.data))
@@ -107,26 +115,26 @@ int main(int argc, char** argv)
          static_cast<float>(source.rows) - 1.f},
         {0.f, static_cast<float>(source.rows) - 1.f}
         */
-        {static_cast<float>(source.cols)/2.f-120,
-         static_cast<float>(source.rows)/2.f-120},
-        {static_cast<float>(source.cols)/2.f+120,
-         static_cast<float>(source.rows)/2.f-120},
-        {static_cast<float>(source.cols)/2.f+120,
-         static_cast<float>(source.rows)/2.f+120},
-        {static_cast<float>(source.cols)/2.f-120,
-         static_cast<float>(source.rows)/2.f+120},
+        {static_cast<float>(source.cols) / 2.f - 120,
+         static_cast<float>(source.rows) / 2.f - 120},
+        {static_cast<float>(source.cols) / 2.f + 120,
+         static_cast<float>(source.rows) / 2.f - 120},
+        {static_cast<float>(source.cols) / 2.f + 120,
+         static_cast<float>(source.rows) / 2.f + 120},
+        {static_cast<float>(source.cols) / 2.f - 120,
+         static_cast<float>(source.rows) / 2.f + 120},
     };
 
     for (size_t i = 0; i < source_corners.size(); ++i) {
         const Point<float> transf_corner_a =
             HomographyTransform<float>::transform(source_corners[i],
                                                   homography) +
-                source_corners[0];
+            source_corners[0];
 
         const Point<float> transf_corner_b =
             HomographyTransform<float>::transform(
                 source_corners[(i + 1) % source_corners.size()], homography) +
-                source_corners[0];
+            source_corners[0];
 
         draw_line<uint8_t, 1>({static_cast<int>(round(transf_corner_a.x)),
                                static_cast<int>(round(transf_corner_a.y))},
@@ -134,7 +142,8 @@ int main(int argc, char** argv)
                                static_cast<int>(round(transf_corner_b.y))},
                               {0},
                               destination);
-        std::cout << source_corners[i].x << " " << source_corners[i].y << std::endl;
+        std::cout << source_corners[i].x << " " << source_corners[i].y
+                  << std::endl;
     }
 
     return 0;

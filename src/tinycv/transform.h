@@ -295,6 +295,86 @@ struct HomographyTransform
         // clang-format on
     }
 
+    /**
+     * Given at least 4 correspondent points <reference> and <tracked>,
+     * find the homography <parameters> such that
+     *
+     *   reference = w(tracked, parameters).
+     */
+    static void from_matches(const std::vector<Point<ElementType>>& reference,
+                             const std::vector<Point<ElementType>>& tracked,
+                             Mat& parameters)
+    {
+        assert(reference.size() >= 4);
+        assert(tracked.size() >= 4);
+
+        assert(reference.size() == tracked.size());
+
+        if (parameters.empty()) {
+            parameters.create<ElementType>(1, number_parameters, 1);
+        }
+
+        assert_validity(parameters);
+
+        // Normalize coordinates to avoid numerical issues
+        float norm_factor = 1.f;
+        for (const auto& container : {reference, tracked}) {
+            for (const auto& p : container) {
+                norm_factor = std::max(norm_factor,
+                                       std::max(std::abs(p.x), std::abs(p.y)));
+            }
+        }
+        norm_factor = 1.f / norm_factor;
+
+        // Generate coefficient matrix
+        Eigen::MatrixXf coeffs(2 * reference.size(), 9);
+
+        for (size_t i = 0; i < reference.size(); ++i) {
+            Point<ElementType> norm_r = {reference[i].x * norm_factor,
+                                         reference[i].y * norm_factor};
+
+            Point<ElementType> norm_t = {tracked[i].x * norm_factor,
+                                         tracked[i].y * norm_factor};
+
+            // clang-format off
+            coeffs.row(2 * i) <<
+                            norm_t.x,             norm_t.y,         1,
+                                   0,                    0,         0,
+                -norm_t.x * norm_r.x, -norm_t.y * norm_r.x, -norm_r.x;
+
+            coeffs.row(2 * i + 1) <<
+                                   0,                    0,         0,
+                            norm_t.x,             norm_t.y,         1,
+                -norm_t.x * norm_r.y, -norm_t.y * norm_r.y, -norm_r.y;
+            // clang-format on
+        }
+
+        // Compute eigenvalues
+        Eigen::MatrixXf cTc = coeffs.transpose() * coeffs;
+        Eigen::SelfAdjointEigenSolver<Eigen::MatrixXf> eigen_solver(cTc);
+
+        // Obtain the eigen vector with lowest eigen value
+        Eigen::VectorXf parameters_eig = eigen_solver.eigenvectors().col(0);
+
+        // Normalize homography by last element
+        parameters_eig *= 1.f / parameters_eig[8];
+
+        // Convert homography to transform parameters
+        // clang-format off
+        parameters << std::initializer_list<ElementType> {
+            parameters_eig[0] - 1.f, parameters_eig[1], parameters_eig[2],
+            parameters_eig[3], parameters_eig[4] - 1.f, parameters_eig[5],
+            parameters_eig[6], parameters_eig[7]
+        };
+        // clang-format on
+
+        // Update transform scale to original resolution of input points
+        change_scale(
+            {1.f / norm_factor, 1.f / norm_factor}, parameters, parameters);
+
+        return;
+    }
+
     static Point<ElementType> transform(const Point<ElementType>& x,
                                         const Mat& parameters)
     {
