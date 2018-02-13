@@ -53,6 +53,16 @@ BoundingBox& BoundingBox::operator=(const BoundingBox& other)
     return *this;
 }
 
+int BoundingBox::flooring_width() const
+{
+    return static_cast<int>(std::floor(right_bottom.x - left_top.x + 1.f));
+}
+
+int BoundingBox::flooring_height() const
+{
+    return static_cast<int>(std::floor(right_bottom.y - left_top.y + 1.f));
+}
+
 int BoundingBox::ceiling_width() const
 {
     return static_cast<int>(std::ceil(right_bottom.x - left_top.x + 1.f));

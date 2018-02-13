@@ -28,6 +28,10 @@ struct BoundingBox
 
     BoundingBox& operator=(BoundingBox&& other);
 
+    int flooring_width() const;
+
+    int flooring_height() const;
+
     int ceiling_width() const;
 
     int ceiling_height() const;

@@ -11,9 +11,11 @@ namespace tinycv
 {
 
 enum class ImageDerivativeAxis { dX, dY };
-enum class FilterOrder { Fifth, Seventh };
+enum class FilterOrder { Third, Fifth, Seventh };
 
-template <int channels, FilterOrder filter_order>
+template <int channels,
+          FilterOrder filter_order,
+          BorderTreatment border_treatment = BorderTreatment::Crop>
 class DerivativeHoloborodko
 {
   public:
@@ -23,7 +25,18 @@ class DerivativeHoloborodko
      */
     static constexpr int border_crop_size()
     {
-        return filter_order == FilterOrder::Fifth ? 2 : 3;
+        if (border_treatment == BorderTreatment::Crop) {
+            switch (filter_order) {
+            case FilterOrder::Third:
+                return 1;
+            case FilterOrder::Fifth:
+                return 2;
+            case FilterOrder::Seventh:
+                return 3;
+            }
+        } else {
+            return 0;
+        }
     }
 
     /**
@@ -37,7 +50,14 @@ class DerivativeHoloborodko
     static void
     derivative(const Mat& image, ImageDerivativeAxis axis, Mat& output_image)
     {
-        if (filter_order == FilterOrder::Fifth) {
+        if (filter_order == FilterOrder::Third) {
+            derivative_impl<InputPixelType, OutputPixelType>(image,
+                                                             axis,
+                                                             {-1, 0, 1},
+                                                             {1, 1, 1},
+                                                             1.f / 3.f,
+                                                             output_image);
+        } else if (filter_order == FilterOrder::Fifth) {
             derivative_impl<InputPixelType, OutputPixelType>(image,
                                                              axis,
                                                              {-1, -2, 0, 2, 1},
@@ -88,12 +108,14 @@ class DerivativeHoloborodko
             vertical_kernel << high_pass_component;
         }
 
-        image_convolve<InputPixelType, OutputPixelType, channels>(
-            image,
-            vertical_kernel,
-            horizontal_kernel,
-            norm_factor,
-            output_image);
+        image_convolve<InputPixelType,
+                       OutputPixelType,
+                       channels,
+                       border_treatment>(image,
+                                         vertical_kernel,
+                                         horizontal_kernel,
+                                         norm_factor,
+                                         output_image);
     }
 };
 

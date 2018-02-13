@@ -171,12 +171,97 @@ void rgb_to_gray(const Mat& rgb_image, Mat& gray_image)
 /**
  * Separable kernel convolution
  */
-template <typename InputPixelType, typename OutputPixelType, int channels>
-void image_convolve(const Mat& image,
-                    const Mat& kernel_v,
-                    const Mat& kernel_h,
+// Convolution core
+enum class ConvolutionDirection { Horizontal, Vertical };
+enum class BorderTreatment { Crop, Reflect };
+
+template <typename PixelType,
+          ConvolutionDirection direction,
+          BorderTreatment border_treatment>
+PixelType sample_pixel(const Mat::ConstIterator<PixelType> &input_it,
+                       const int border_size,
+                       const int n,
+                       int y,
+                       int x,
+                       int c)
+{
+    if (border_treatment == BorderTreatment::Crop) {
+        return (direction == ConvolutionDirection::Vertical)
+                   ? input_it(y + n, x, c)
+                   : input_it(y, x + n, c);
+    } else {
+        const auto reflect = []
+                             (int value,
+                              int higher_limit) {
+            return std::abs(higher_limit - std::abs(value - higher_limit));
+        };
+        const int last_row = input_it.m.rows - 1;
+        const int last_col = input_it.m.cols - 1;
+
+        return (direction == ConvolutionDirection::Vertical)
+                   ? input_it(reflect(y - border_size + n, last_row), x, c)
+                   : input_it(y, reflect(x - border_size + n, last_col), c);
+    }
+}
+
+template <typename InputPixelType,
+          typename OutputPixelType,
+          ConvolutionDirection direction,
+          BorderTreatment border_treatment>
+void convolve(const Mat::ConstIterator<float>& kernel_it,
+              const float norm_factor,
+              const bool clamp_output,
+              const Mat::ConstIterator<InputPixelType>& input_it,
+              Mat::Iterator<OutputPixelType>& output_it)
+{
+    assert(input_it.m.type() == Mat::get_type_enum<InputPixelType>());
+    assert(output_it.m.type() == Mat::get_type_enum<OutputPixelType>());
+    const int border_size = (kernel_it.m.cols - 1) / 2;
+
+    for (int y = 0; y < output_it.m.rows; ++y) {
+        for (int x = 0; x < output_it.m.cols; ++x) {
+            for (int c = 0; c < output_it.m.channels(); ++c) {
+                float conv_sum = 0.f;
+
+                for (int n = 0; n < kernel_it.m.cols; ++n) {
+                    auto input_pix = sample_pixel<InputPixelType,
+                                                  direction,
+                                                  border_treatment>(
+                        input_it, border_size, n, y, x, c);
+
+                    conv_sum +=
+                        kernel_it(0, n, 0) * static_cast<float>(input_pix);
+                }
+
+                float normalized_pix = conv_sum * norm_factor;
+                if (std::is_integral<OutputPixelType>::value) {
+                    normalized_pix = std::round(normalized_pix);
+                }
+
+                if (clamp_output) {
+                    if (std::is_same<OutputPixelType, uint8_t>::value) {
+                        normalized_pix =
+                            std::min(255.f, std::max(0.f, normalized_pix));
+                    }
+                }
+
+                output_it(y, x, c) =
+                    static_cast<typename std::remove_reference<decltype(
+                        output_it(y, x, c))>::type>(normalized_pix);
+            }
+        }
+    }
+}
+
+template <typename InputPixelType,
+          typename OutputPixelType,
+          int channels,
+          BorderTreatment border_treatment = BorderTreatment::Crop>
+void image_convolve(const Mat &image,
+                    const Mat &kernel_v,
+                    const Mat &kernel_h,
                     const float kernel_norm_factor,
-                    Mat& output_image)
+                    Mat &output_image)
 {
     using IntermediatePixelType = decltype(InputPixelType() * InputPixelType());
 
@@ -194,86 +279,68 @@ void image_convolve(const Mat& image,
     Mat::ConstIterator<float> kernel_v_it(kernel_v);
     Mat::ConstIterator<float> kernel_h_it(kernel_h);
 
-    // Create output image for first pass
     Mat output_vertical_pass;
-    output_vertical_pass.create<IntermediatePixelType>(
-        image.rows - 2 * border_v, image.cols, channels);
 
-    // Create output image for second pass
-    output_image.create<OutputPixelType>(
-        image.rows - 2 * border_v, image.cols - 2 * border_h, channels);
+    if (border_treatment == BorderTreatment::Crop) {
+        // Create output image for first pass
+        output_vertical_pass.create<IntermediatePixelType>(
+            image.rows - 2 * border_v, image.cols, channels);
 
-    // Convolution core
-    enum class ConvolutionDirection { Horizontal, Vertical };
-    const auto convolve = [](const ConvolutionDirection direction,
-                             const Mat::ConstIterator<float>& kernel_it,
-                             const float norm_factor,
-                             const bool clamp_output,
-                             const auto& input_it,
-                             auto& output_it) {
-        for (int y = 0; y < output_it.m.rows; ++y) {
-            for (int x = 0; x < output_it.m.cols; ++x) {
-                for (int c = 0; c < output_it.m.channels(); ++c) {
-                    float conv_sum = 0.f;
+        // Create output image for second pass
+        output_image.create<OutputPixelType>(
+            image.rows - 2 * border_v, image.cols - 2 * border_h, channels);
+    } else {
+        assert(border_treatment == BorderTreatment::Reflect);
 
-                    for (int n = 0; n < kernel_it.m.cols; ++n) {
-                        auto input_pix =
-                            (direction == ConvolutionDirection::Vertical)
-                                ? input_it(y + n, x, c)
-                                : input_it(y, x + n, c);
+        // Create output image for first pass
+        output_vertical_pass.create<IntermediatePixelType>(
+            image.rows, image.cols, channels);
 
-                        conv_sum +=
-                            kernel_it(0, n, 0) * static_cast<float>(input_pix);
-                    }
-
-                    float normalized_pix = conv_sum * norm_factor;
-                    if (std::is_integral<OutputPixelType>::value) {
-                        normalized_pix = std::round(normalized_pix);
-                    }
-
-                    if (clamp_output) {
-                        if (std::is_same<OutputPixelType, uint8_t>::value) {
-                            normalized_pix =
-                                std::min(255.f, std::max(0.f, normalized_pix));
-                        }
-                    }
-
-                    output_it(y, x, c) =
-                        static_cast<typename std::remove_reference<decltype(
-                            output_it(y, x, c))>::type>(normalized_pix);
-                }
-            }
-        }
-    };
+        // Create output image for second pass
+        output_image.create<OutputPixelType>(
+            image.rows, image.cols, channels);
+    }
 
     // First pass: Vertical convolution
     Mat::Iterator<IntermediatePixelType> first_pass_it(output_vertical_pass);
-    convolve(ConvolutionDirection::Vertical,
-             kernel_v_it,
-             1.f,
-             false,
-             Mat::ConstIterator<InputPixelType>(image),
-             first_pass_it);
+    bool clamp_output = false;
+    convolve<InputPixelType,
+             IntermediatePixelType,
+             ConvolutionDirection::Vertical,
+             border_treatment>(kernel_v_it,
+                               1.f,
+                               clamp_output,
+                               Mat::ConstIterator<InputPixelType>(image),
+                               first_pass_it);
 
     // Second pass: Horizontal convolution
+    clamp_output = true;
     Mat::Iterator<OutputPixelType> second_pass_it(output_image);
-    convolve(ConvolutionDirection::Horizontal,
-             kernel_h_it,
-             kernel_norm_factor,
-             true,
-             Mat::ConstIterator<IntermediatePixelType>(output_vertical_pass),
-             second_pass_it);
+    convolve<IntermediatePixelType,
+             OutputPixelType,
+             ConvolutionDirection::Horizontal,
+             border_treatment>(
+        kernel_h_it,
+        kernel_norm_factor,
+        clamp_output,
+        Mat::ConstIterator<IntermediatePixelType>(output_vertical_pass),
+        second_pass_it);
 
     return;
 }
 
-template <typename InputPixelType, typename OutputPixelType, int channels>
-void gaussian_blur(const Mat& image,
+template <typename InputPixelType,
+          typename OutputPixelType,
+          int channels,
+          BorderTreatment border_treatment>
+void gaussian_blur(const Mat &image,
                    int kernel_border_size,
                    float standard_deviation,
-                   Mat& output_image)
+                   Mat &output_image)
 {
     assert(std::abs(standard_deviation) > 1e-6f);
+    assert(image.channels() == channels);
+    assert(image.type() == Mat::get_type_enum<InputPixelType>());
 
     Mat kernel;
     kernel.create<float>(1, 2 * kernel_border_size + 1, 1);
@@ -291,7 +358,7 @@ void gaussian_blur(const Mat& image,
     // TODO image might contain black border, but convolution is ignoring the
     // mask
     float norm_factor = 1.f / (kernel_summation * kernel_summation);
-    image_convolve<InputPixelType, OutputPixelType, channels>(
+    image_convolve<InputPixelType, OutputPixelType, channels, border_treatment>(
         image, kernel, kernel, norm_factor, output_image);
 
     return;

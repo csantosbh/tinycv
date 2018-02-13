@@ -33,13 +33,10 @@ class CvMat(interface.TypeInspectorInterface):
         height = int(picked_obj['rows'])
         flags = int(picked_obj['flags_'])
 
-        channels = ((((flags) & CV_MAT_CN_MASK) >> CV_CN_SHIFT) + 1)
+        channels = int(int(picked_obj['step']['buf'][1]))
         row_stride = int(int(picked_obj['step']['buf'][0])/channels)
 
-        if channels >= 3:
-            pixel_layout = 'bgra'
-        else:
-            pixel_layout = 'rgba'
+        pixel_layout = 'rgba'
 
         cvtype = ((flags) & CV_MAT_TYPE_MASK)
 

@@ -381,7 +381,7 @@ void preprocess_image(const float scale,
         output_scaled_mask);
 
     Mat output_blurred;
-    gaussian_blur<InputPixelType, InputPixelType, 1>(
+    gaussian_blur<InputPixelType, InputPixelType, 1, BorderTreatment::Crop>(
         output_scaled, blur_kernel_border, blur_std, output_blurred);
 
     output = image_remap_histogram<InputPixelType,
