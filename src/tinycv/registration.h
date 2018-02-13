@@ -265,9 +265,10 @@ void generate_self_ic_hessian(const Mat& img_reference,
     const int gradient_border = DerivativeMethod::border_crop_size();
 
     BoundingBox border_bb_1{
-        {{gradient_border, gradient_border}},
-        {{static_cast<float>(grad_x_reference.cols - gradient_border - 1),
-          static_cast<float>(grad_x_reference.rows - gradient_border - 1)}}};
+        {Point<float>{gradient_border, gradient_border}},
+        {Point<float>{
+            static_cast<float>(grad_x_reference.cols - gradient_border - 1),
+            static_cast<float>(grad_x_reference.rows - gradient_border - 1)}}};
 
     Mat cropped_grad_x =
         image_crop<GradPixelType>(grad_x_reference, border_bb_1);
@@ -275,9 +276,10 @@ void generate_self_ic_hessian(const Mat& img_reference,
         image_crop<GradPixelType>(grad_y_reference, border_bb_1);
 
     BoundingBox border_bb_2{
-        {{gradient_border * 2, gradient_border * 2}},
-        {{static_cast<float>(img_reference.cols - gradient_border * 2 - 1),
-          static_cast<float>(img_reference.rows - gradient_border * 2 - 1)}}};
+        {Point<float>{gradient_border * 2, gradient_border * 2}},
+        {Point<float>{
+            static_cast<float>(img_reference.cols - gradient_border * 2 - 1),
+            static_cast<float>(img_reference.rows - gradient_border * 2 - 1)}}};
     Mat cropped_reference = image_crop<PixelType>(img_reference, border_bb_2);
 
     ///
@@ -404,7 +406,7 @@ bool register_impl(const Mat& img_reference,
                    Mat& composed_p)
 {
     const int number_transform_params = TransformClass::number_parameters;
-    const float convergence_threshold = 1e-3f;
+    const float convergence_threshold = 1e-8f;
 
     using TransformColType =
         Eigen::Matrix<GradPixelType, number_transform_params, 1>;
@@ -417,17 +419,19 @@ bool register_impl(const Mat& img_reference,
     // Crop image borders to match their sizes with the second derivative
     const int gradient_border = DerivativeMethod::border_crop_size();
 
-    const BoundingBox border_bb_2_r {
-        {{gradient_border * 2, gradient_border * 2}},
-        {{static_cast<float>(img_reference.cols - gradient_border * 2 - 1),
-          static_cast<float>(img_reference.rows - gradient_border * 2 - 1)}}};
+    const BoundingBox border_bb_2_r{
+        {Point<float>{gradient_border * 2, gradient_border * 2}},
+        {Point<float>{
+            static_cast<float>(img_reference.cols - gradient_border * 2 - 1),
+            static_cast<float>(img_reference.rows - gradient_border * 2 - 1)}}};
     Mat cropped_reference = image_crop<PixelType>(img_reference, border_bb_2_r);
 
-    const BoundingBox border_bb_2_t {
-        {{gradient_border * 2, gradient_border * 2}},
-        {{static_cast<float>(img_tracked.cols - gradient_border * 2 - 1),
-          static_cast<float>(img_tracked.rows - gradient_border * 2 - 1)}}};
-    Mat cropped_tracked   = image_crop<PixelType>(img_tracked, border_bb_2_t);
+    const BoundingBox border_bb_2_t{
+        {Point<float>{gradient_border * 2, gradient_border * 2}},
+        {Point<float>{
+            static_cast<float>(img_tracked.cols - gradient_border * 2 - 1),
+            static_cast<float>(img_tracked.rows - gradient_border * 2 - 1)}}};
+    Mat cropped_tracked = image_crop<PixelType>(img_tracked, border_bb_2_t);
 
     Eigen::Map<HessianMatType> mi_hessian_mat(
         static_cast<GradPixelType*>(mi_hessian.data));
@@ -480,9 +484,10 @@ bool register_impl(const Mat& img_reference,
     bool converged = false;
     for (int iteration = 1;; ++iteration) {
         // Compute transform bounding box
-        BoundingBox interest_bb = bounding_box_intersect(
-            bounding_box_transform<TransformClass>(cropped_tracked_bb, composed_p),
-            cropped_ref_bb);
+        BoundingBox interest_bb =
+            bounding_box_intersect(bounding_box_transform<TransformClass>(
+                                       cropped_tracked_bb, composed_p),
+                                   cropped_ref_bb);
 
         // Generate cropped reference and steepest grad images
         local_reference = image_crop<PixelType>(cropped_reference, interest_bb);
@@ -523,7 +528,12 @@ bool register_impl(const Mat& img_reference,
                   << " " << mi_gradient_mat.transpose() << std::endl;
 #endif
 
-        delta_p_mat = mi_hessian_inv * mi_gradient_mat;
+        //delta_p_mat = mi_hessian_inv * mi_gradient_mat;
+        delta_p_mat = 1e-6 * mi_gradient_mat;
+        if(delta_p_mat.ColsAtCompileTime > 2) {
+            delta_p_mat(6) *= 1e-4;
+            delta_p_mat(7) *= 1e-4;
+        }
 
         // Check for convergence
         if (delta_p_mat.norm() < convergence_threshold) {
@@ -577,14 +587,19 @@ class NonLinearRegistration
     void set_reference(const Mat& reference);
 
   private:
-    Mat reference_preprocessed_;
-    Mat steepest_gradient_r_;
-    Mat mi_hessian_;
+    struct RegisterPyramidLevel
+    {
+        Mat reference_preprocessed;
+        Mat steepest_gradient_r;
+        Mat mi_hessian;
 
-    const float work_scale_           = 1.0f;
-    const int preprocess_blur_border_ = 6;
-    const float preprocess_blur_std_  = 4.0;
-    const int number_max_iterations_  = 60;
+        const float work_scale           = 0.4f;
+        const int preprocess_blur_border = 10;
+        const float preprocess_blur_std  = 4.0;
+        const int number_max_iterations  = 30;
+    };
+
+    std::map<std::string, RegisterPyramidLevel> register_pyr_levels_;
 };
 }
 

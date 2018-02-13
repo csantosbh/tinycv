@@ -77,6 +77,35 @@ template <typename BinningMethod>
 using WeightArray =
     std::array<float, 2 * BinningMethod::influence_margin() + 1>;
 
+template <typename PixelType>
+void minmax(const Mat& image, PixelType& min, PixelType& max)
+{
+    assert(!image.empty());
+    assert(image.rows > 0);
+    assert(image.cols > 0);
+    assert(image.type() == Mat::get_type_enum<PixelType>());
+
+    // For now, this implementation only supports 1 channel
+    assert(image.channels() == 1);
+
+    Mat::ConstIterator<PixelType> im_it(image);
+
+    min = im_it(0, 0, 0);
+    max = im_it(0, 0, 0);
+
+    for (int row = 0; row < image.rows; ++row) {
+        for (int col = 0; col < image.cols; ++col) {
+            if (min > im_it(row, col, 0)) {
+                min = im_it(row, col, 0);
+            } else if (max < im_it(row, col, 0)) {
+                max = im_it(row, col, 0);
+            }
+        }
+    }
+
+    return;
+}
+
 /**
  * Creates an image by mapping the ranges [0, 255] to [-0.5,
  * HistogramConfig::num_central_bins()-0.5).
@@ -102,15 +131,22 @@ Mat image_remap_histogram(const Mat& input_img,
     output_img.create<OutputPixelType>(
         input_img.rows, input_img.cols, input_img.channels());
 
+    // Compute lowest and highest color values
+    InputPixelType input_color_max;
+    InputPixelType input_color_min;
+    minmax(input_img, input_color_min, input_color_max);
+
+    assert(input_color_min != input_color_max);
+
     // Compute coefficients of linear bin mapping function
-    static bool xulamps=true;
-    const float epsilon   = HistogramConfig::remap_epsilon();
-    const float color_max = xulamps? 223.f + epsilon : 255.f + epsilon;
-    const float color_min = xulamps ? 28.f : 0.f;
-    xulamps=false;
+    const float epsilon = HistogramConfig::remap_epsilon();
+    const float color_max = static_cast<float>(input_color_max) + epsilon;
+    const float color_min = static_cast<float>(input_color_min);
+
     const float a_bin_map =
-        static_cast<float>(HistogramConfig::num_central_bins()) / (color_max-color_min);
-    const float b_bin_map = -0.5-a_bin_map*color_min;
+        static_cast<float>(HistogramConfig::num_central_bins()) /
+        (color_max - color_min);
+    const float b_bin_map = -0.5 - a_bin_map * color_min;
 
     Mat::ConstIterator<InputPixelType> input_it(input_img);
     output_img.for_each<Mat::Iterator<OutputPixelType>>(

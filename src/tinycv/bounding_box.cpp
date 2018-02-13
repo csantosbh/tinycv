@@ -22,8 +22,7 @@ BoundingBox::BoundingBox(BoundingBox&& other)
 {
 }
 
-BoundingBox::BoundingBox(
-    const std::initializer_list<std::array<float, 2>>& corners)
+BoundingBox::BoundingBox(const std::initializer_list<Point<float>>& corners)
     : left_top(*corners.begin())
     , right_bottom(*(corners.end() - 1))
 {
@@ -56,12 +55,12 @@ BoundingBox& BoundingBox::operator=(const BoundingBox& other)
 
 int BoundingBox::ceiling_width() const
 {
-    return static_cast<int>(std::ceil(right_bottom[0] - left_top[0] + 1.f));
+    return static_cast<int>(std::ceil(right_bottom.x - left_top.x + 1.f));
 }
 
 int BoundingBox::ceiling_height() const
 {
-    return static_cast<int>(std::ceil(right_bottom[1] - left_top[1] + 1.f));
+    return static_cast<int>(std::ceil(right_bottom.y - left_top.y + 1.f));
 }
 
 BoundingBox bounding_box_intersect(const BoundingBox& bb_a,
@@ -70,9 +69,9 @@ BoundingBox bounding_box_intersect(const BoundingBox& bb_a,
     using std::max;
     using std::min;
 
-    return BoundingBox({{max(bb_a.left_top[0], bb_b.left_top[0]),
-                         max(bb_a.left_top[1], bb_b.left_top[1])},
-                        {min(bb_a.right_bottom[0], bb_b.right_bottom[0]),
-                         min(bb_a.right_bottom[1], bb_b.right_bottom[1])}});
+    return BoundingBox({{max(bb_a.left_top.x, bb_b.left_top.x),
+                         max(bb_a.left_top.y, bb_b.left_top.y)},
+                        {min(bb_a.right_bottom.x, bb_b.right_bottom.x),
+                         min(bb_a.right_bottom.y, bb_b.right_bottom.y)}});
 }
 }

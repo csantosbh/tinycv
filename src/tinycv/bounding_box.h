@@ -20,7 +20,7 @@ struct BoundingBox
 
     BoundingBox(BoundingBox&& other);
 
-    BoundingBox(const std::initializer_list<std::array<float, 2>>& corners);
+    BoundingBox(const std::initializer_list<Point<float>>& corners);
 
     BoundingBox(const Mat& image);
 
@@ -32,8 +32,8 @@ struct BoundingBox
 
     int ceiling_height() const;
 
-    std::array<float, 2> left_top;
-    std::array<float, 2> right_bottom;
+    Point<float> left_top;
+    Point<float> right_bottom;
 };
 
 template <typename TransformClass>
@@ -42,10 +42,10 @@ BoundingBox bounding_box_transform(const BoundingBox& bb,
 {
     // clang-format off
     const std::array<Point<float>, 4> image_corners{{
-        {bb.left_top[0],     bb.left_top[1]},
-        {bb.right_bottom[0], bb.left_top[1]},
-        {bb.right_bottom[0], bb.right_bottom[1]},
-        {bb.left_top[0],     bb.right_bottom[1]}
+        {bb.left_top.x,     bb.left_top.y},
+        {bb.right_bottom.x, bb.left_top.y},
+        {bb.right_bottom.x, bb.right_bottom.y},
+        {bb.left_top.x,     bb.right_bottom.y}
     }};
 
     BoundingBox output_bb{
@@ -61,12 +61,12 @@ BoundingBox bounding_box_transform(const BoundingBox& bb,
             TransformClass::transform(image_corners[i], transform_parameters);
 
         // Update bounding box
-        const float* transformed_ptr = transformed_corner.ptr();
+        const float* transformed_ptr = transformed_corner.cptr();
         for (int c = 0; c < 2; ++c) {
-            output_bb.left_top[c] =
-                std::min(output_bb.left_top[c], transformed_ptr[c]);
-            output_bb.right_bottom[c] =
-                std::max(output_bb.right_bottom[c], transformed_ptr[c]);
+            output_bb.left_top.ptr()[c] =
+                std::min(output_bb.left_top.ptr()[c], transformed_ptr[c]);
+            output_bb.right_bottom.ptr()[c] =
+                std::max(output_bb.right_bottom.ptr()[c], transformed_ptr[c]);
         }
     }
 
@@ -83,19 +83,19 @@ Mat image_crop(const Mat& image, const BoundingBox& crop_bb)
 
     Mat output;
 
-    assert(crop_bb.left_top[0] >= -1.f);
-    assert(crop_bb.left_top[1] >= -1.f);
+    assert(crop_bb.left_top.x >= -1.f);
+    assert(crop_bb.left_top.y >= -1.f);
 
-    assert(crop_bb.left_top[0] <= crop_bb.right_bottom[0]);
-    assert(crop_bb.left_top[1] <= crop_bb.right_bottom[1]);
+    assert(crop_bb.left_top.x <= crop_bb.right_bottom.x);
+    assert(crop_bb.left_top.y <= crop_bb.right_bottom.y);
 
-    assert(crop_bb.right_bottom[0] <= image.cols);
-    assert(crop_bb.right_bottom[1] <= image.rows);
+    assert(crop_bb.right_bottom.x <= image.cols);
+    assert(crop_bb.right_bottom.y <= image.rows);
 
     output.create_from_buffer<PixelType>(
         static_cast<PixelType*>(image.data) +
-            static_cast<int>(crop_bb.left_top[1]) * image.row_stride() +
-            static_cast<int>(crop_bb.left_top[0]) * image.channels(),
+            static_cast<int>(crop_bb.left_top.y) * image.row_stride() +
+            static_cast<int>(crop_bb.left_top.x) * image.channels(),
         crop_bb.ceiling_height(),
         crop_bb.ceiling_width(),
         image.channels(),

@@ -13,9 +13,14 @@ struct Point
     PrimitiveType x;
     PrimitiveType y;
 
-    const PrimitiveType* ptr() const
+    const PrimitiveType* cptr() const
     {
         return reinterpret_cast<const PrimitiveType*>(this);
+    }
+
+    PrimitiveType* ptr()
+    {
+        return reinterpret_cast<PrimitiveType*>(this);
     }
 };
 
@@ -23,6 +28,13 @@ template <typename PrimitiveType>
 Point<PrimitiveType> operator-(const Point<PrimitiveType>& point)
 {
     return {-point.x, -point.y};
+}
+
+template <typename PrimitiveType>
+Point<PrimitiveType> operator-(const Point<PrimitiveType>& a,
+                               const Point<PrimitiveType>& b)
+{
+    return {a.x - b.x, a.y - b.y};
 }
 
 template <typename PrimitiveType>

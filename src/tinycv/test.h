@@ -403,9 +403,10 @@ void generate_mi_derivative_space(const std::string& file_name,
 
     // Crop image borders to match their sizes with the derivative
     BoundingBox border_bb{
-        {{gradient_border, gradient_border}},
-        {{static_cast<float>(destination.cols - gradient_border - 1),
-          static_cast<float>(destination.rows - gradient_border - 1)}}};
+        {Point<float>{gradient_border, gradient_border}},
+        {Point<float>{
+            static_cast<float>(destination.cols - gradient_border - 1),
+            static_cast<float>(destination.rows - gradient_border - 1)}}};
 
     Mat cropped_destination = image_crop<PixelType>(destination, border_bb);
     Mat cropped_source      = image_crop<PixelType>(source, border_bb);
@@ -588,16 +589,17 @@ void generate_mi_hessian_space(const std::string& file_name,
     ///
     // Crop image borders to match their sizes with the second derivative
     BoundingBox border_bb_1{
-        {{gradient_border, gradient_border}},
-        {{static_cast<float>(grad_x.cols - gradient_border - 1),
-          static_cast<float>(grad_x.rows - gradient_border - 1)}}};
+        {Point<float>{gradient_border, gradient_border}},
+        {Point<float>{static_cast<float>(grad_x.cols - gradient_border - 1),
+                      static_cast<float>(grad_x.rows - gradient_border - 1)}}};
     Mat cropped_grad_x = image_crop<GradPixelType>(grad_x, border_bb_1);
     Mat cropped_grad_y = image_crop<GradPixelType>(grad_y, border_bb_1);
 
     BoundingBox border_bb_2{
-        {{gradient_border * 2, gradient_border * 2}},
-        {{static_cast<float>(destination.cols - gradient_border * 2 - 1),
-          static_cast<float>(destination.rows - gradient_border * 2 - 1)}}};
+        {Point<float>{gradient_border * 2, gradient_border * 2}},
+        {Point<float>{
+            static_cast<float>(destination.cols - gradient_border * 2 - 1),
+            static_cast<float>(destination.rows - gradient_border * 2 - 1)}}};
     Mat cropped_destination = image_crop<PixelType>(destination, border_bb_2);
     Mat cropped_source      = image_crop<PixelType>(source, border_bb_2);
 

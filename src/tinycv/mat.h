@@ -48,6 +48,14 @@ class Mat
                             size_t stride);
 
     template <typename PixelType>
+    Mat& create_from_buffer(
+        std::unique_ptr<PixelType, std::function<void(PixelType*)>>& ptr,
+        int rows,
+        int cols,
+        int channels,
+        size_t stride);
+
+    template <typename PixelType>
     Mat& create(int rows, int cols, int channels);
 
     template <typename PixelType>

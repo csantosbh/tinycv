@@ -118,6 +118,25 @@ Mat& Mat::create_from_buffer(PixelType* ptr,
     return *this;
 }
 
+template <typename PixelType>
+Mat& Mat::create_from_buffer(
+    std::unique_ptr<PixelType, std::function<void(PixelType*)>>& ptr,
+    int height,
+    int width,
+    int channels,
+    size_t stride)
+{
+    data      = ptr.get();
+    data_mgr_ = std::move(ptr);
+    cols      = width;
+    rows      = height;
+    step      = {stride, static_cast<size_t>(channels), sizeof(PixelType)};
+
+    compute_flags<PixelType>(channels);
+
+    return *this;
+}
+
 template <typename T>
 Mat::Iterator<T>& Mat::Iterator<T>::operator=(Mat::Iterator<T>& o)
 {
